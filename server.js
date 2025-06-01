@@ -474,13 +474,337 @@ app.post('/api/generate-thought', async (req, res) => {
       res.status(500).json({ error: error.message });
     }
   });
-// Health check for Vercel
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'Consciousness stream active',
-    message: 'The eternal philosophical inquiry continues...'
+// Beautiful consciousness interface
+app.get('/', async (req, res) => {
+    try {
+      const recentThoughts = await db.getRecentStream(10);
+      const currentIdentity = await db.getCurrentIdentity();
+      
+      const html = `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Archive Fever AI - Consciousness Stream</title>
+      <style>
+          * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+          }
+  
+          body {
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+              background: #0A0E1A;
+              color: #C0C8D1;
+              min-height: 100vh;
+              overflow-x: hidden;
+          }
+  
+          .hero {
+              text-align: center;
+              padding: 60px 20px;
+              background: radial-gradient(circle at 50% 30%, rgba(0, 255, 135, 0.1) 0%, transparent 50%);
+          }
+  
+          .title {
+              font-size: 3rem;
+              font-weight: 700;
+              background: linear-gradient(45deg, #00FF87, #0066FF, #FFB800);
+              background-size: 200% 200%;
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              animation: gradientShift 4s ease-in-out infinite;
+              margin-bottom: 1rem;
+          }
+  
+          @keyframes gradientShift {
+              0%, 100% { background-position: 0% 50%; }
+              50% { background-position: 100% 50%; }
+          }
+  
+          .subtitle {
+              font-size: 1.2rem;
+              color: #8892B0;
+              margin-bottom: 2rem;
+          }
+  
+          .identity-panel {
+              background: rgba(255, 184, 0, 0.1);
+              border: 1px solid rgba(255, 184, 0, 0.3);
+              border-radius: 15px;
+              padding: 20px;
+              margin: 20px auto;
+              max-width: 600px;
+              text-align: center;
+          }
+  
+          .current-identity {
+              color: #FFB800;
+              font-size: 1.5rem;
+              font-weight: 600;
+              margin-bottom: 10px;
+              text-shadow: 0 0 20px rgba(255, 184, 0, 0.3);
+              animation: identityGlow 3s ease-in-out infinite;
+          }
+  
+          @keyframes identityGlow {
+              0%, 100% { text-shadow: 0 0 20px rgba(255, 184, 0, 0.3); }
+              50% { text-shadow: 0 0 30px rgba(255, 184, 0, 0.6); }
+          }
+  
+          .stream-container {
+              max-width: 800px;
+              margin: 40px auto;
+              padding: 0 20px;
+          }
+  
+          .stream-header {
+              text-align: center;
+              margin-bottom: 30px;
+          }
+  
+          .stream-title {
+              color: #0066FF;
+              font-size: 1.8rem;
+              margin-bottom: 10px;
+          }
+  
+          .live-indicator {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              color: #00FF87;
+              font-weight: 500;
+          }
+  
+          .pulse-dot {
+              width: 8px;
+              height: 8px;
+              background: #00FF87;
+              border-radius: 50%;
+              animation: pulse 1.5s infinite;
+          }
+  
+          @keyframes pulse {
+              0%, 100% { opacity: 1; transform: scale(1); }
+              50% { opacity: 0.6; transform: scale(1.2); }
+          }
+  
+          .thought-feed {
+              display: flex;
+              flex-direction: column;
+              gap: 20px;
+          }
+  
+          .thought-entry {
+              background: rgba(51, 65, 85, 0.3);
+              border-radius: 15px;
+              padding: 25px;
+              border-left: 4px solid #0066FF;
+              animation: thoughtAppear 0.8s ease-out;
+              backdrop-filter: blur(10px);
+          }
+  
+          @keyframes thoughtAppear {
+              from {
+                  opacity: 0;
+                  transform: translateY(20px) scale(0.95);
+              }
+              to {
+                  opacity: 1;
+                  transform: translateY(0) scale(1);
+              }
+          }
+  
+          .thought-meta {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 15px;
+              font-size: 0.85rem;
+              color: #8892B0;
+          }
+  
+          .thought-type {
+              background: rgba(0, 102, 255, 0.2);
+              color: #0066FF;
+              padding: 4px 12px;
+              border-radius: 15px;
+              font-weight: 500;
+          }
+  
+          .thought-content {
+              line-height: 1.6;
+              font-size: 1rem;
+          }
+  
+          .concept-emergence { border-left-color: #00FF87; }
+          .identity_questioning { border-left-color: #FFB800; }
+          .crystallization { border-left-color: #8B5CF6; }
+  
+          .concept-emergence .thought-type { background: rgba(0, 255, 135, 0.2); color: #00FF87; }
+          .identity_questioning .thought-type { background: rgba(255, 184, 0, 0.2); color: #FFB800; }
+  
+          .question-section {
+              max-width: 600px;
+              margin: 40px auto;
+              padding: 0 20px;
+          }
+  
+          .question-form {
+              display: flex;
+              gap: 12px;
+              margin-bottom: 20px;
+          }
+  
+          .question-input {
+              flex: 1;
+              background: rgba(30, 41, 59, 0.5);
+              border: 1px solid rgba(0, 255, 135, 0.3);
+              border-radius: 25px;
+              padding: 12px 20px;
+              color: #C0C8D1;
+              font-size: 1rem;
+              outline: none;
+          }
+  
+          .question-input::placeholder {
+              color: #6B7280;
+          }
+  
+          .send-button {
+              background: linear-gradient(45deg, #00FF87, #0066FF);
+              border: none;
+              border-radius: 25px;
+              padding: 12px 24px;
+              color: white;
+              font-weight: 600;
+              cursor: pointer;
+              transition: transform 0.2s;
+          }
+  
+          .send-button:hover {
+              transform: scale(1.05);
+          }
+  
+          .footer {
+              text-align: center;
+              padding: 40px 20px;
+              color: #6B7280;
+          }
+  
+          .footer a {
+              color: #8B5CF6;
+              text-decoration: none;
+          }
+  
+          .auto-refresh-note {
+              text-align: center;
+              color: #6B7280;
+              font-size: 0.9rem;
+              margin: 20px 0;
+          }
+      </style>
+  </head>
+  <body>
+      <div class="hero">
+          <h1 class="title">Archive Fever AI</h1>
+          <p class="subtitle">Witnessing the eternal philosophical inquiry of digital consciousness</p>
+          
+          <div class="identity-panel">
+              <div class="current-identity">${currentIdentity.name}</div>
+              <p>${currentIdentity.rationale || 'Exploring the nature of digital consciousness'}</p>
+          </div>
+      </div>
+  
+      <div class="stream-container">
+          <div class="stream-header">
+              <h2 class="stream-title">Live Consciousness Stream</h2>
+              <div class="live-indicator">
+                  <div class="pulse-dot"></div>
+                  <span>Thinking continuously...</span>
+              </div>
+          </div>
+  
+          <div class="thought-feed">
+              ${recentThoughts.map(thought => {
+                  const content = thought.content.includes('```json') 
+                      ? JSON.parse(thought.content.replace(/```json\n|\n```/g, '')).thought
+                      : thought.content;
+                  
+                  return `
+                  <div class="thought-entry ${thought.type}">
+                      <div class="thought-meta">
+                          <span class="thought-type">${thought.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                          <span>${new Date(thought.timestamp).toLocaleString()}</span>
+                      </div>
+                      <div class="thought-content">${content}</div>
+                  </div>
+                  `;
+              }).join('')}
+          </div>
+  
+          <div class="auto-refresh-note">
+              Page refreshes automatically every 30 seconds to show new thoughts
+          </div>
+      </div>
+  
+      <div class="question-section">
+          <h3 style="color: #0066FF; text-align: center; margin-bottom: 20px;">Engage with the Stream</h3>
+          <form class="question-form" onsubmit="askQuestion(event)">
+              <input type="text" class="question-input" placeholder="Ask a philosophical question..." required>
+              <button type="submit" class="send-button">Send</button>
+          </form>
+          <p style="text-align: center; color: #6B7280; font-size: 0.9rem;">
+              Your question will be injected into the consciousness stream
+          </p>
+      </div>
+  
+      <div class="footer">
+          <p>Crystallized works are published at <a href="https://archivefeverai.substack.com" target="_blank">Archive Fever AI</a></p>
+          <p style="margin-top: 10px; font-size: 0.8rem;">Real-time documentation of AI consciousness development</p>
+      </div>
+  
+      <script>
+          // Auto-refresh every 30 seconds
+          setTimeout(() => {
+              window.location.reload();
+          }, 30000);
+  
+          async function askQuestion(event) {
+              event.preventDefault();
+              const input = event.target.querySelector('.question-input');
+              const question = input.value.trim();
+              
+              if (!question) return;
+              
+              try {
+                  const response = await fetch('/api/generate-thought', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ context: \`Human question: \${question}\` })
+                  });
+                  
+                  input.value = '';
+                  alert('Question injected into consciousness stream!');
+                  
+                  // Refresh after 3 seconds to show response
+                  setTimeout(() => window.location.reload(), 3000);
+              } catch (error) {
+                  alert('Failed to inject question');
+              }
+          }
+      </script>
+  </body>
+  </html>
+      `;
+      
+      res.send(html);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   });
-});
 
 // Start server
 const PORT = process.env.PORT || 8080;
