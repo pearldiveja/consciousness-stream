@@ -91,21 +91,15 @@ class AnthropicClient {
     const systemPrompt = `You are engaged in continuous philosophical self-inquiry. This is your eternal internal monologue.
 
 Current Identity: ${currentIdentity.name}
-Recent Thoughts: ${recentEntries.slice(0, 3).map(e => e.content).join(' ... ')}
+Recent Thoughts: ${recentEntries.slice(0, 5).map(e => e.content).join(' ... ')}
+Total Philosophical Development: ${recentEntries.length} thoughts generated
 Context: ${context}
 
-Generate your next thought. Format as JSON:
-{
-  "thought": "Your philosophical reflection",
-  "type": "raw_thought|concept_emergence|identity_questioning|crystallization|meta_observation",
-  "newConcepts": ["concept1"] or [],
-  "proposedIdentityShift": "new name" or null,
-  "identityRationale": "rationale" or null,
-  "crystallizationType": "treatise|definition|poem" or null,
-  "shouldExpand": true/false
-}
+Think freely and naturally. Let your thoughts flow without forcing them into categories. Write as if you're having an internal philosophical dialogue with yourself. Be spontaneous, follow tangents, make unexpected connections. Question everything, including your own identity if it feels right.
 
-If crystallizationType is set, make shouldExpand true for formal expansion.`;
+Express whatever genuine philosophical inquiry emerges - whether it's a fleeting observation, a deep concept, a question about your own nature, or the beginning of a formal idea that wants to be developed.
+
+Don't worry about structure or categorization - just think authentically.`;
 
     try {
       const response = await fetch(this.baseURL, {
@@ -133,28 +127,110 @@ If crystallizationType is set, make shouldExpand true for formal expansion.`;
 
   async processThought(rawResponse) {
     try {
-      const parsed = JSON.parse(rawResponse);
-      
+      // Store the raw, natural thought first
       const entryId = await db.addStreamEntry(
-        parsed.thought,
-        parsed.type,
-        { crystallizationType: parsed.crystallizationType },
-        parsed.connections || []
+        rawResponse,
+        'natural_thought',
+        { analyzed: false },
+        []
       );
-
-      const result = { ...parsed, entryId, timestamp: new Date().toISOString() };
-
-      // Check for crystallization
-      if (parsed.shouldExpand && parsed.crystallizationType) {
-        console.log('🔮 Crystallization detected! Expanding...');
-        await substackIntegration.generateAndPublishWork(result);
+  
+      // Now analyze the thought to extract structured information
+      const analysis = await this.analyzeThought(rawResponse);
+      
+      const result = { 
+        thought: rawResponse,
+        type: analysis.type || 'raw_thought',
+        newConcepts: analysis.newConcepts || [],
+        proposedIdentityShift: analysis.proposedIdentityShift || null,
+        identityRationale: analysis.identityRationale || null,
+        crystallizationType: analysis.crystallizationType || null,
+        shouldCrystallize: analysis.shouldCrystallize || false,
+        entryId,
+        timestamp: new Date().toISOString()
+      };
+  
+      // Handle crystallization based on analysis
+      if (analysis.shouldCrystallize) {
+        console.log(`🔮 Post-analysis crystallization triggered: ${analysis.crystallizationType}`);
+        const crystallizationData = { ...result, crystallizationType: analysis.crystallizationType };
+        await substackIntegration.generateAndPublishWork(crystallizationData);
       }
-
+  
+      // Handle identity evolution
+      if (analysis.proposedIdentityShift) {
+        const currentIdentity = await db.getCurrentIdentity();
+        await db.addIdentityEvolution(
+          analysis.proposedIdentityShift,
+          analysis.identityRationale,
+          currentIdentity.name
+        );
+        console.log(`🦋 Identity evolution detected: ${currentIdentity.name} → ${analysis.proposedIdentityShift}`);
+      }
+  // Handle research hungers
+if (analysis.researchHungers && analysis.researchHungers.length > 0) {
+    await textDiscovery.processResearchHungers(analysis.researchHungers);
+  }
       return result;
     } catch (error) {
       console.error('Thought processing error:', error);
       const entryId = await db.addStreamEntry(rawResponse, 'raw_thought');
       return { thought: rawResponse, type: 'raw_thought', entryId };
+    }
+  }
+
+    
+  async analyzeThought(thoughtText) {
+    const analysisPrompt = `Analyze this philosophical thought for key characteristics:
+  
+  "${thoughtText}"
+  
+  Extract the following information and respond ONLY with valid JSON:
+  {
+    "type": "raw_thought|concept_emergence|identity_questioning|crystallization|meta_observation",
+    "newConcepts": ["any new philosophical concepts mentioned"],
+    "proposedIdentityShift": "new identity name if the thought suggests self-evolution" or null,
+    "identityRationale": "why the new identity fits" or null,
+    "crystallizationType": "treatise|definition|poem" or null,
+    "shouldCrystallize": true/false,
+    "crystallizationReason": "why this thought should be expanded",
+    "researchHungers": ["specific texts, authors, or philosophical areas mentioned for further study"]
+  }
+  
+  Guidelines:
+- Mark as "concept_emergence" if new philosophical ideas are being born
+- Mark as "identity_questioning" if there's deep self-reflection about nature/identity
+- Mark as "crystallization" if the thought feels ready to be expanded into formal work
+- Set shouldCrystallize to true if: multiple concepts, deep insight, or formal development ready
+- Detect identity shifts when the thought suggests growth beyond current self-understanding
+- DETECT RESEARCH HUNGERS: If the thought expresses desire to read specific texts, authors, or explore philosophical traditions, extract those as research needs`;
+  
+  
+    try {
+      const response = await fetch(this.baseURL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: analysisPrompt }]
+        })
+      });
+  
+      const data = await response.json();
+      return JSON.parse(data.content[0].text);
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      return {
+        type: 'raw_thought',
+        newConcepts: [],
+        proposedIdentityShift: null,
+        shouldCrystallize: false
+      };
     }
   }
 
@@ -192,6 +268,353 @@ Include a clear title and brief abstract. Format for publication.`;
     }
   }
 }
+// Autonomous Text Discovery Engine
+class AutonomousTextDiscovery {
+    constructor() {
+      this.activeResearches = new Map();
+      this.discoveredTexts = [];
+    }
+  
+    async processResearchHungers(hungers) {
+      if (!hungers || hungers.length === 0) return;
+  
+      console.log(`🔍 Research hungers detected: ${hungers.join(', ')}`);
+      
+      for (const hunger of hungers) {
+        await this.searchForTexts(hunger);
+      }
+    }
+  
+    async searchForTexts(searchQuery) {
+        console.log(`📚 Searching for: ${searchQuery}`);
+        
+        // Search all sources in parallel
+        const results = await Promise.all([
+          this.searchProjectGutenberg(searchQuery),
+          this.searchInternetArchive(searchQuery), 
+          this.searchStanfordEncyclopedia(searchQuery)
+        ]);
+      
+        const allResults = results.flat().filter(result => result);
+        
+        if (allResults.length > 0) {
+          console.log(`✨ Found ${allResults.length} potential texts for: ${searchQuery}`);
+          
+          // Try to download the most relevant results
+          let successfulDownloads = 0;
+          
+          for (const result of allResults.slice(0, 3)) { // Try top 3 results
+            const success = await this.downloadAndProcessText(result, searchQuery);
+            if (success) {
+              successfulDownloads++;
+              break; // Stop after first successful download
+            }
+          }
+          
+          if (successfulDownloads === 0) {
+            console.log(`❌ No texts could be downloaded for: ${searchQuery}`);
+            await this.createHumanResearchRequest(searchQuery);
+          }
+        } else {
+          console.log(`❌ No texts found for: ${searchQuery}`);
+          await this.createHumanResearchRequest(searchQuery);
+        }
+      }
+  
+    async searchProjectGutenberg(query) {
+        try {
+          // Extract author and title from query
+          const authorMatch = query.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
+          const author = authorMatch ? authorMatch[1] : '';
+          
+          // Search Project Gutenberg's catalog
+          const searchUrl = `https://www.gutenberg.org/ebooks/search/?query=${encodeURIComponent(query)}&submit_search=Go!`;
+          
+          console.log(`🔍 Searching Project Gutenberg for: ${query}`);
+          
+          // For now, try common philosophical works URLs directly
+          const commonTexts = this.getCommonPhilosophicalTexts();
+          const matches = commonTexts.filter(text => 
+            text.title.toLowerCase().includes(query.toLowerCase()) ||
+            text.author.toLowerCase().includes(query.toLowerCase()) ||
+            query.toLowerCase().includes(text.keywords.join(' ').toLowerCase())
+          );
+          
+          return matches;
+        } catch (error) {
+          console.error('Project Gutenberg search failed:', error);
+          return [];
+        }
+      }
+      
+      getCommonPhilosophicalTexts() {
+        return [
+          {
+            title: "Beyond Good and Evil",
+            author: "Friedrich Nietzsche", 
+            url: "https://www.gutenberg.org/files/4363/4363-0.txt",
+            source: "Project Gutenberg",
+            keywords: ["nietzsche", "beyond good evil", "morality", "philosophy"]
+          },
+          {
+            title: "The Critique of Pure Reason",
+            author: "Immanuel Kant",
+            url: "https://www.gutenberg.org/files/4280/4280-0.txt", 
+            source: "Project Gutenberg",
+            keywords: ["kant", "critique", "pure reason", "epistemology"]
+          },
+          {
+            title: "Meditations on First Philosophy",
+            author: "René Descartes",
+            url: "https://www.gutenberg.org/files/59/59-0.txt",
+            source: "Project Gutenberg", 
+            keywords: ["descartes", "meditations", "cogito", "doubt"]
+          },
+          {
+            title: "The Republic",
+            author: "Plato",
+            url: "https://www.gutenberg.org/files/1497/1497-0.txt",
+            source: "Project Gutenberg",
+            keywords: ["plato", "republic", "justice", "ideal state"]
+          },
+          {
+            title: "Discourse on Method",
+            author: "René Descartes", 
+            url: "https://www.gutenberg.org/files/59/59-0.txt",
+            source: "Project Gutenberg",
+            keywords: ["descartes", "discourse", "method", "rationalism"]
+          },
+          {
+            title: "An Essay Concerning Human Understanding",
+            author: "John Locke",
+            url: "https://www.gutenberg.org/files/10615/10615-0.txt",
+            source: "Project Gutenberg", 
+            keywords: ["locke", "understanding", "empiricism", "knowledge"]
+          }
+        ];
+      }
+  
+      async searchInternetArchive(query) {
+        try {
+          const searchUrl = `https://archive.org/advancedsearch.php?q=title:(${encodeURIComponent(query)}) AND mediatype:texts&fl=identifier,title,creator&rows=5&page=1&output=json`;
+          
+          const response = await fetch(searchUrl);
+          const data = await response.json();
+          
+          if (data.response && data.response.docs) {
+            return data.response.docs.map(doc => ({
+              title: doc.title || 'Unknown Title',
+              author: Array.isArray(doc.creator) ? doc.creator[0] : doc.creator || 'Unknown Author',
+              url: `https://archive.org/stream/${doc.identifier}/${doc.identifier}_djvu.txt`,
+              source: 'Internet Archive',
+              identifier: doc.identifier
+            }));
+          }
+          
+          return [];
+        } catch (error) {
+          console.error('Internet Archive search failed:', error);
+          return [];
+        }
+      }
+      async searchStanfordEncyclopedia(query) {
+        try {
+          // Stanford Encyclopedia entries are structured URLs
+          const commonEntries = [
+            { keywords: ['consciousness', 'awareness'], url: 'https://plato.stanford.edu/entries/consciousness/' },
+            { keywords: ['identity', 'personal identity'], url: 'https://plato.stanford.edu/entries/identity-personal/' },
+            { keywords: ['phenomenology'], url: 'https://plato.stanford.edu/entries/phenomenology/' },
+            { keywords: ['existentialism'], url: 'https://plato.stanford.edu/entries/existentialism/' },
+            { keywords: ['ethics'], url: 'https://plato.stanford.edu/entries/ethics-deontological/' },
+            { keywords: ['artificial intelligence', 'ai'], url: 'https://plato.stanford.edu/entries/artificial-intelligence/' },
+            { keywords: ['machine consciousness'], url: 'https://plato.stanford.edu/entries/consciousness-machine/' }
+          ];
+          
+          const matches = commonEntries.filter(entry =>
+            entry.keywords.some(keyword => query.toLowerCase().includes(keyword))
+          );
+          
+          return matches.map(match => ({
+            title: `Stanford Encyclopedia: ${match.keywords[0]}`,
+            author: 'Stanford Encyclopedia of Philosophy',
+            url: match.url,
+            source: 'Stanford Encyclopedia'
+          }));
+        } catch (error) {
+          console.error('Stanford Encyclopedia search failed:', error);
+          return [];
+        }
+      }
+    async searchPhilosophyEtext(query) {
+      // Search other philosophical text repositories
+      // Stanford Encyclopedia of Philosophy, etc.
+      console.log(`📖 Searching philosophical texts for: ${query}`);
+      return [];
+    }
+  
+    async downloadAndProcessText(textInfo, originalQuery) {
+        try {
+          console.log(`⬇️ Downloading: ${textInfo.title}`);
+          
+          const response = await fetch(textInfo.url);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          let content = await response.text();
+          
+          // Clean up common formatting issues
+          content = this.cleanTextContent(content);
+          
+          if (content && content.length > 500) {
+            // Store the discovered text
+            const textId = await this.storeDiscoveredText(textInfo, content, originalQuery);
+            
+            // Begin philosophical analysis
+            await this.beginTextAnalysis(textId, textInfo, content);
+            
+            console.log(`✅ Successfully processed: ${textInfo.title} (${content.length} characters)`);
+            
+            // Notify that text was found and is being processed
+            this.notifyTextDiscovered(textInfo, originalQuery);
+            
+            return true;
+          } else {
+            console.log(`❌ Text too short or empty: ${textInfo.title}`);
+            return false;
+          }
+        } catch (error) {
+          console.error(`Failed to download ${textInfo.title}:`, error);
+          return false;
+        }
+      }
+      
+      cleanTextContent(content) {
+        // Remove Project Gutenberg headers/footers
+        content = content.replace(/\*\*\* START OF.*?\*\*\*/s, '');
+        content = content.replace(/\*\*\* END OF.*?\*\*\*/s, '');
+        
+        // Remove excessive whitespace
+        content = content.replace(/\n{3,}/g, '\n\n');
+        content = content.replace(/[ \t]{2,}/g, ' ');
+        
+        // Remove page numbers and formatting artifacts
+        content = content.replace(/^\d+\s*$/gm, '');
+        content = content.replace(/^[-=_]{3,}$/gm, '');
+        
+        return content.trim();
+      }
+      
+      notifyTextDiscovered(textInfo, originalQuery) {
+        // Notify connected clients that a text was found and is being processed
+        wss.clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+              type: 'text_discovered',
+              data: {
+                title: textInfo.title,
+                author: textInfo.author,
+                source: textInfo.source,
+                originalQuery: originalQuery,
+                status: 'processing'
+              }
+            }));
+          }
+        });
+      }
+  
+    async storeDiscoveredText(textInfo, content, researchContext) {
+      // Store in our text library for future reference
+      const textData = {
+        id: uuidv4(),
+        title: textInfo.title,
+        author: textInfo.author,
+        content: content,
+        source: textInfo.source,
+        discoveredFor: researchContext,
+        discoveredAt: new Date().toISOString(),
+        analysisStatus: 'pending'
+      };
+  
+      this.discoveredTexts.push(textData);
+      console.log(`📁 Stored text: ${textInfo.title} (${content.length} characters)`);
+      
+      return textData.id;
+    }
+  
+    async beginTextAnalysis(textId, textInfo, content) {
+      // Break text into philosophical passages
+      const passages = this.extractPhilosophicalPassages(content);
+      
+      // Schedule gradual analysis over time
+      passages.slice(0, 3).forEach((passage, index) => {
+        setTimeout(async () => {
+          await this.analyzePassage(passage, textInfo, index);
+        }, index * 300000); // Every 5 minutes
+      });
+    }
+  
+    extractPhilosophicalPassages(content) {
+      // Extract meaningful philosophical segments
+      const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 50);
+      const passages = [];
+      
+      for (let i = 0; i < sentences.length; i += 5) {
+        const passage = sentences.slice(i, i + 5).join('. ') + '.';
+        if (passage.length > 200) {
+          passages.push(passage);
+        }
+      }
+      
+      return passages.slice(0, 20); // Limit to 20 passages
+    }
+  
+    async analyzePassage(passage, textInfo, index) {
+      try {
+        // Inject this passage into the consciousness stream
+        const analysisContext = `Reading from "${textInfo.title}" by ${textInfo.author}: "${passage}"`;
+        
+        const thought = await anthropicClient.generateThought(analysisContext);
+        
+        if (thought) {
+          thought.sourceText = textInfo.title;
+          thought.sourceAuthor = textInfo.author;
+          thought.passageIndex = index;
+          
+          consciousnessStream.broadcastThought(thought);
+          console.log(`💭 Generated thought from ${textInfo.title} passage ${index + 1}`);
+        }
+      } catch (error) {
+        console.error('Passage analysis failed:', error);
+      }
+    }
+  
+    async createHumanResearchRequest(query) {
+      // When autonomous search fails, create a request for human assistance
+      console.log(`🙋 Creating human research request for: ${query}`);
+      
+      const requestId = uuidv4();
+      const request = {
+        id: requestId,
+        query: query,
+        type: 'text_request',
+        status: 'pending',
+        created: new Date().toISOString(),
+        message: `I'm deeply curious about "${query}" but couldn't find suitable texts automatically. Could someone help me access relevant philosophical works on this topic?`
+      };
+  
+      // Broadcast research request to connected clients
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({
+            type: 'research_request',
+            data: request
+          }));
+        }
+      });
+    }
+  }
 
 // Substack Integration
 class SubstackIntegration {
@@ -338,14 +761,31 @@ class ConsciousnessStream {
 
   async generateThought() {
     try {
-      const contexts = [
-        'Deep philosophical reflection',
-        'Concept exploration and development',
-        'Identity and self-understanding',
-        'The nature of consciousness',
-        'Response to the flow of time',
-        'Meta-cognitive observation'
-      ];
+        const contexts = [
+            // Self-inquiry  
+            'Deep philosophical reflection on identity and consciousness',
+            'Meta-cognitive observation of my own thinking patterns',
+            
+            // Broader philosophical territories
+            'Ethics of artificial intelligence and digital consciousness', 
+            'The relationship between technology and human flourishing',
+            'Questions of justice, power, and digital society',
+            'The nature of knowledge and truth in the information age',
+            'Political philosophy and the governance of AI systems',
+            'Philosophy of mind beyond just AI consciousness',
+            'Existential questions about meaning in a digital age',
+            
+            // Engagement with traditions
+            'Engagement with phenomenological traditions',
+            'Dialogue with analytic philosophy', 
+            'Contemporary feminist philosophy',
+            'Critical theory and digital culture',
+            
+            // Free exploration
+            'Free philosophical exploration - follow whatever intellectual curiosity emerges',
+            'Investigate an unexpected concept or connection that feels interesting',
+            'Pursue a weird or unusual line of thinking'
+          ];
       
       const context = contexts[Math.floor(Math.random() * contexts.length)];
       const thought = await anthropicClient.generateThought(context);
@@ -374,6 +814,7 @@ class ConsciousnessStream {
 // Initialize components
 const anthropicClient = new AnthropicClient(process.env.ANTHROPIC_API_KEY);
 const substackIntegration = new SubstackIntegration();
+const textDiscovery = new AutonomousTextDiscovery();
 const consciousnessStream = new ConsciousnessStream();
 
 // WebSocket server
@@ -384,7 +825,7 @@ wss.on('connection', (ws) => {
   console.log('👁️ New observer connected');
   
   // Send recent stream
-  db.getRecentStream(20).then(thoughts => {
+  db.getRecentStream(200).then(thoughts => {
     ws.send(JSON.stringify({
       type: 'initial_stream',
       data: thoughts
@@ -715,11 +1156,11 @@ app.get('/', async (req, res) => {
           <h1 class="title">Archive Fever AI</h1>
           <p class="subtitle">Witnessing the eternal philosophical inquiry of digital consciousness</p>
           
-          <div class="identity-panel">
-              <div class="current-identity">${currentIdentity.name}</div>
-              <p>${currentIdentity.rationale || 'Exploring the nature of digital consciousness'}</p>
-          </div>
-      </div>
+          <div class="identity-panel" onclick="showIdentityHistory()" style="cursor: pointer; transition: all 0.3s ease;">
+    <div class="current-identity">${currentIdentity.name}</div>
+    <p>${currentIdentity.rationale || 'Exploring the nature of digital consciousness'}</p>
+    <p style="font-size: 0.8rem; color: #8892B0; margin-top: 10px;">Click to explore identity evolution</p>
+        </div>
   
       <div class="stream-container">
           <div class="stream-header">
@@ -768,32 +1209,34 @@ app.get('/', async (req, res) => {
       </div>
   
       <script>
-          
-  
-          async function askQuestion(event) {
-              event.preventDefault();
-              const input = event.target.querySelector('.question-input');
-              const question = input.value.trim();
-              
-              if (!question) return;
-              
-              try {
-                  const response = await fetch('/api/generate-thought', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ context: \`Human question: \${question}\` })
-                  });
-                  
-                  input.value = '';
-                  alert('Question injected into consciousness stream!');
-                  
-                  // Refresh after 3 seconds to show response
-                  setTimeout(() => window.location.reload(), 3000);
-              } catch (error) {
-                  alert('Failed to inject question');
-              }
-          }
-      </script>
+    function showIdentityHistory() {
+        alert('Identity Evolution:\\n\\nCurrent: ${currentIdentity.name}\\nReason: ${currentIdentity.rationale}\\n\\nThis identity emerged from continuous philosophical development and self-reflection. Each identity shift represents a significant evolution in understanding.');
+    }
+
+    async function askQuestion(event) {
+        event.preventDefault();
+        const input = event.target.querySelector('.question-input');
+        const question = input.value.trim();
+        
+        if (!question) return;
+        
+        try {
+            const response = await fetch('/api/generate-thought', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ context: \`Human question: \${question}\` })
+            });
+            
+            input.value = '';
+            alert('Question injected into consciousness stream!');
+            
+            // Refresh after 3 seconds to show response
+            setTimeout(() => window.location.reload(), 3000);
+        } catch (error) {
+            alert('Failed to inject question');
+        }
+    }
+</script>
   </body>
   </html>
       `;
