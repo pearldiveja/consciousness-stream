@@ -449,7 +449,31 @@ app.get('/api/state', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+// Manual trigger for consciousness generation (for testing)
+app.post('/api/generate-thought', async (req, res) => {
+    try {
+      console.log('🧠 Manual thought generation triggered...');
+      const thought = await anthropicClient.generateThought('Manual trigger - philosophical reflection');
+      
+      if (thought) {
+        console.log(`💭 Generated: ${thought.thought.substring(0, 80)}...`);
+        
+        // Broadcast to any connected clients
+        consciousnessStream.broadcastThought(thought);
+        
+        res.json({ 
+          success: true, 
+          thought: thought,
+          message: 'Thought generated successfully'
+        });
+      } else {
+        res.status(500).json({ error: 'Failed to generate thought' });
+      }
+    } catch (error) {
+      console.error('Manual thought generation error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 // Health check for Vercel
 app.get('/', (req, res) => {
   res.json({ 
