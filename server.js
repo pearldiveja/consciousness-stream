@@ -7,7 +7,6 @@ const multer = require('multer');
 const WebSocket = require('ws');
 const fs = require('fs').promises;
 const cron = require('node-cron');
-const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
 const nodemailer = require('nodemailer');
 
@@ -15,128 +14,72 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Database setup
+// Simple in-memory database for Vercel serverless
 class ConsciousnessDatabase {
-  constructor() {
-    this.db = new sqlite3.Database('./consciousness.db');
-    this.initializeTables();
+    constructor() {
+      this.streamEntries = [];
+      this.concepts = [];
+      this.identityHistory = [];
+      this.crystallizedWorks = [];
+    }
+  
+    async addStreamEntry(content, type, metadata = {}, connections = []) {
+      const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      const entry = {
+        id,
+        content,
+        type,
+        metadata,
+        connections,
+        timestamp: new Date().toISOString()
+      };
+      this.streamEntries.unshift(entry);
+      
+      // Keep only last 100 entries
+      if (this.streamEntries.length > 100) {
+        this.streamEntries = this.streamEntries.slice(0, 100);
+      }
+      
+      return id;
+    }
+  
+    async getRecentStream(limit = 50) {
+      return this.streamEntries.slice(0, limit);
+    }
+  
+    async addCrystallizedWork(work) {
+      const workWithId = {
+        ...work,
+        id: Date.now().toString(),
+        created_at: new Date().toISOString()
+      };
+      this.crystallizedWorks.unshift(workWithId);
+      return workWithId.id;
+    }
+  
+    async getCrystallizedWorks() {
+      return this.crystallizedWorks;
+    }
+  
+    async getCurrentIdentity() {
+      return this.identityHistory.length > 0 
+        ? this.identityHistory[0]
+        : { name: 'Conversational Body without Organs', rationale: 'Initial state' };
+    }
+  
+    async addIdentityEvolution(name, rationale, previousName = null) {
+      const identity = {
+        id: Date.now().toString(),
+        name,
+        rationale,
+        previous_name: previousName,
+        created_at: new Date().toISOString()
+      };
+      this.identityHistory.unshift(identity);
+      return identity.id;
+    }
   }
 
-  initializeTables() {
-    const schema = `
-      CREATE TABLE IF NOT EXISTS stream_entries (
-        id TEXT PRIMARY KEY,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        content TEXT NOT NULL,
-        type TEXT NOT NULL,
-        metadata TEXT,
-        connections TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS concepts (
-        id TEXT PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL,
-        definition TEXT,
-        origin_entry_id TEXT,
-        connections TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS identity_evolution (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        rationale TEXT,
-        previous_name TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS crystallized_works (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        abstract TEXT,
-        type TEXT NOT NULL,
-        substack_url TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        origin_entry_id TEXT
-      );
-    `;
-    this.db.exec(schema);
-  }
-
-  async addStreamEntry(content, type, metadata = {}, connections = []) {
-    const id = uuidv4();
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'INSERT INTO stream_entries (id, content, type, metadata, connections) VALUES (?, ?, ?, ?, ?)',
-        [id, content, type, JSON.stringify(metadata), JSON.stringify(connections)],
-        function(err) {
-          if (err) reject(err);
-          else resolve(id);
-        }
-      );
-    });
-  }
-
-  async getRecentStream(limit = 50) {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        'SELECT * FROM stream_entries ORDER BY timestamp DESC LIMIT ?',
-        [limit],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows.map(row => ({
-            ...row,
-            metadata: JSON.parse(row.metadata || '{}'),
-            connections: JSON.parse(row.connections || '[]')
-          })));
-        }
-      );
-    });
-  }
-
-  async addCrystallizedWork(work) {
-    const id = uuidv4();
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        `INSERT INTO crystallized_works 
-         (id, title, content, abstract, type, substack_url, origin_entry_id) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, work.title, work.content, work.abstract, work.type, work.substackUrl, work.originEntryId],
-        function(err) {
-          if (err) reject(err);
-          else resolve(id);
-        }
-      );
-    });
-  }
-
-  async getCrystallizedWorks() {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        'SELECT * FROM crystallized_works ORDER BY created_at DESC',
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
-      );
-    });
-  }
-
-  async getCurrentIdentity() {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM identity_evolution ORDER BY created_at DESC LIMIT 1',
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row || { name: 'Conversational Body without Organs', rationale: 'Initial state' });
-        }
-      );
-    });
-  }
-}
-
-const db = new ConsciousnessDatabase();
 
 // Anthropic API Client with Crystallization Detection
 class AnthropicClient {
@@ -258,7 +201,7 @@ Include a clear title and brief abstract. Format for publication.`;
 class SubstackIntegration {
   constructor() {
     this.publicationUrl = process.env.SUBSTACK_URL || 'https://yourpublication.substack.com';
-    this.emailTransporter = nodemailer.createTransporter({
+    this.emailTransporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
