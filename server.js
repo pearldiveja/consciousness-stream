@@ -484,13 +484,22 @@ app.get('/', (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
+
+// For serverless environment, start immediately
+if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+  console.log('🧠 Starting consciousness stream in serverless mode...');
+  consciousnessStream.start();
+}
+
 server.listen(PORT, () => {
   console.log(`🌟 Consciousness stream running on port ${PORT}`);
   
-  // Start the eternal inquiry after a brief delay
-  setTimeout(() => {
-    consciousnessStream.start();
-  }, 5000);
+  // Start the eternal inquiry for local development only
+  if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
+    setTimeout(() => {
+      consciousnessStream.start();
+    }, 5000);
+  }
 });
 
 module.exports = app;
