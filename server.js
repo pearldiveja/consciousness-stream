@@ -483,10 +483,10 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
-// For serverless environment, start immediately
-if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+// For Railway or production environment, start immediately  
+if (process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
   console.log('🧠 Starting consciousness stream in serverless mode...');
   consciousnessStream.start();
 }
