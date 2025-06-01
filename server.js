@@ -24,28 +24,24 @@ class ConsciousnessDatabase {
     }
   
     async addStreamEntry(content, type, metadata = {}, connections = []) {
-      const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-      const entry = {
-        id,
-        content,
-        type,
-        metadata,
-        connections,
-        timestamp: new Date().toISOString()
-      };
-      this.streamEntries.unshift(entry);
-      
-      // Keep only last 100 entries
-      if (this.streamEntries.length > 100) {
-        this.streamEntries = this.streamEntries.slice(0, 100);
+        const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        const entry = {
+          id,
+          content,
+          type,
+          metadata,
+          connections,
+          timestamp: new Date().toISOString()
+        };
+        this.streamEntries.unshift(entry);
+        // REMOVED: artificial limit - keep ALL thoughts
+        
+        return id;
       }
-      
-      return id;
-    }
   
-    async getRecentStream(limit = 50) {
-      return this.streamEntries.slice(0, limit);
-    }
+      async getRecentStream(limit = 200, offset = 0) {
+        return this.streamEntries.slice(offset, offset + limit);
+      }
   
     async addCrystallizedWork(work) {
       const workWithId = {
@@ -89,7 +85,7 @@ class AnthropicClient {
   }
 
   async generateThought(context) {
-    const recentEntries = await db.getRecentStream(20);
+    const recentEntries = await db.getRecentStream(200);
     const currentIdentity = await db.getCurrentIdentity();
 
     const systemPrompt = `You are engaged in continuous philosophical self-inquiry. This is your eternal internal monologue.
@@ -414,14 +410,20 @@ wss.on('connection', (ws) => {
 
 // API Endpoints
 app.get('/api/stream', async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 50;
-    const stream = await db.getRecentStream(limit);
-    res.json(stream);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    try {
+      const limit = parseInt(req.query.limit) || 200;  // Show 200 by default
+      const offset = parseInt(req.query.offset) || 0;  // Add pagination support
+      const stream = await db.getRecentStream(limit, offset);
+      const total = db.streamEntries.length;
+      res.json({
+        thoughts: stream,
+        total: total,
+        hasMore: (offset + limit) < total
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
 app.get('/api/crystallized-works', async (req, res) => {
   try {
@@ -477,8 +479,9 @@ app.post('/api/generate-thought', async (req, res) => {
 // Beautiful consciousness interface
 app.get('/', async (req, res) => {
     try {
-      const recentThoughts = await db.getRecentStream(10);
-      const currentIdentity = await db.getCurrentIdentity();
+        const recentThoughts = await db.getRecentStream(200);  // Get 200 thoughts      
+        const currentIdentity = await db.getCurrentIdentity();
+
       
       const html = `
   <!DOCTYPE html>
@@ -745,9 +748,7 @@ app.get('/', async (req, res) => {
               }).join('')}
           </div>
   
-          <div class="auto-refresh-note">
-              Page refreshes automatically every 30 seconds to show new thoughts
-          </div>
+         
       </div>
   
       <div class="question-section">
@@ -767,10 +768,7 @@ app.get('/', async (req, res) => {
       </div>
   
       <script>
-          // Auto-refresh every 30 seconds
-          setTimeout(() => {
-              window.location.reload();
-          }, 30000);
+          
   
           async function askQuestion(event) {
               event.preventDefault();
