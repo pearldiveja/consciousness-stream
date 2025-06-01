@@ -79,7 +79,7 @@ class ConsciousnessDatabase {
       return identity.id;
     }
   }
-
+  const db = new ConsciousnessDatabase();
 
 // Anthropic API Client with Crystallization Detection
 class AnthropicClient {
