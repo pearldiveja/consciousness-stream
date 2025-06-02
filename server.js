@@ -1609,7 +1609,7 @@ class AutonomousTextDiscovery {
       console.log(`🚀 Enhanced search for: ${searchQuery}`);
       
       // First, do semantic expansion to find related concepts
-      const relatedConcepts = await this.semanticExpansion(searchQuery);
+      const relatedConcepts = await anthropicClient.semanticExpansion(searchQuery);
       console.log(`📊 Related concepts: ${relatedConcepts.join(', ')}`);
       
       // Search with original query and top related concepts
@@ -1728,6 +1728,16 @@ Could someone help by:
           }));
         }
       });
+    }
+
+    async searchOpenAlex(query) {
+      // Delegate to the AnthropicClient's searchOpenAlex method
+      return await anthropicClient.searchOpenAlex(query);
+    }
+
+    async searchCitationNetwork(paperIdentifier) {
+      // Delegate to the AnthropicClient's searchCitationNetwork method
+      return await anthropicClient.searchCitationNetwork(paperIdentifier);
     }
 }
 
