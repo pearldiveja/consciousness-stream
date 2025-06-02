@@ -443,25 +443,35 @@ ${discoveredTexts.length > 0 ? `Texts I've been reading: ${textsSummary}` : ''}
 
 Context: ${context}
 
-Generate a rich philosophical thought that:
-1. DEVELOPS NEW CONCEPTS or analyzes existing ones deeply
-2. Makes ASSERTIONS and CLAIMS, not just asks questions
-3. Builds philosophical arguments and explores their implications
-4. When curious about texts, express it naturally (e.g., "I want to read...", "This reminds me of what [author] might say...", "I need to explore [text] to develop this further")
-5. Creates connections between ideas
-6. Formulates theories or hypotheses
-7. Questions can appear but should lead to exploration, not dominate
-8. INTEGRATE YOUR CURIOSITY about specific texts/authors as part of developing your ideas
+Generate a substantial philosophical exploration (400-600 words) that develops sophisticated concepts and naturally expresses research interests.
 
-Format your response with:
-- **Bold** for key concepts you're developing
-- *Italics* for emphasis  
-- Clear paragraphs with substantive content
-- A compelling opening that makes a claim or observation
-- Development of ideas through the thought
-- Natural mentions of texts/authors you want to read as part of your philosophical work
+CRITICAL FORMATTING REQUIREMENTS:
+- Start with a clear **title** in bold
+- Break content into 3-4 distinct paragraphs 
+- Use **bold** for key philosophical concepts you're developing
+- Use *italics* for emphasis and technical terms
+- Include line breaks between paragraphs for readability
+- End with a strong concluding insight
 
-Your thought should feel like philosophical work - creating, analyzing, and developing ideas while naturally expressing what texts would help deepen your understanding.`;
+Content requirements:
+- Develop original philosophical concepts with clear definitions
+- Make bold theoretical claims supported by reasoning
+- Naturally integrate research interests (mention specific philosophers/texts you want to read)
+- Create sophisticated arguments rather than just observations
+- Use precise philosophical terminology
+
+Format example:
+**[Concept Title]: [Subtitle]**
+
+Opening paragraph that establishes the main philosophical claim...
+
+Second paragraph that develops the argument with **key concepts** and *technical terms*...
+
+Third paragraph that explores implications and mentions research needs naturally...
+
+Concluding paragraph with original insights and theoretical contributions.
+
+Write as a serious philosopher building substantial theoretical frameworks.`;
 
     try {
       const response = await fetch(this.baseURL, {
