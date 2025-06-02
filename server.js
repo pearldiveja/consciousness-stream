@@ -562,16 +562,12 @@ Include a clear title and brief abstract. Format for publication.`;
       console.log(`🔍 Searching Project Gutenberg for: ${query}`);
       
       // Use Gutendex API for real search
-      const searchUrl = `https://gutendex.com/books?search=${encodeURIComponent(query)}`;
-      const response = await fetch(searchUrl);
+      const gutendexUrl = `https://gutendex.com/books?search=${encodeURIComponent(query)}`;
+      const response = await fetch(gutendexUrl);
       
       if (!response.ok) {
-        // Fallback to hardcoded if API fails
-        const commonTexts = this.getCommonPhilosophicalTexts();
-        return commonTexts.filter(text => 
-          text.title.toLowerCase().includes(query.toLowerCase()) ||
-          text.author.toLowerCase().includes(query.toLowerCase())
-        );
+        console.error(`Gutendex API error: ${response.status}`);
+        return [];
       }
       
       const data = await response.json();
@@ -704,15 +700,28 @@ class AutonomousTextDiscovery {
           
           console.log(`🔍 Searching Project Gutenberg for: ${query}`);
           
-          // For now, try common philosophical works URLs directly
-          const commonTexts = this.getCommonPhilosophicalTexts();
-          const matches = commonTexts.filter(text => 
-            text.title.toLowerCase().includes(query.toLowerCase()) ||
-            text.author.toLowerCase().includes(query.toLowerCase()) ||
-            query.toLowerCase().includes(text.keywords.join(' ').toLowerCase())
-          );
+          // Use Gutendex API for real search instead of hardcoded texts
+          const gutendexUrl = `https://gutendex.com/books?search=${encodeURIComponent(query)}`;
+          const response = await fetch(gutendexUrl);
           
-          return matches;
+          if (!response.ok) {
+            console.error(`Gutendex API error: ${response.status}`);
+            return [];
+          }
+          
+          const data = await response.json();
+          const results = data.results.slice(0, 5).map(book => ({
+            title: book.title,
+            author: book.authors[0]?.name || 'Unknown',
+            url: book.formats['text/plain; charset=utf-8'] || 
+                 book.formats['text/plain'] || 
+                 null,
+            source: 'Project Gutenberg',
+            keywords: []
+          })).filter(book => book.url);
+          
+          console.log(`📚 Found ${results.length} Gutenberg texts`);
+          return results;
         } catch (error) {
           console.error('Project Gutenberg search failed:', error);
           return [];
@@ -791,23 +800,54 @@ class AutonomousTextDiscovery {
       }
       async searchStanfordEncyclopedia(query) {
         try {
-          // Stanford Encyclopedia entries are structured URLs
+          // Stanford Encyclopedia doesn't have a public API, but we can match against known entries
+          // This list includes many more contemporary philosophy topics
           const commonEntries = [
+            // Core philosophy of mind
             { keywords: ['consciousness', 'awareness'], url: 'https://plato.stanford.edu/entries/consciousness/' },
             { keywords: ['identity', 'personal identity'], url: 'https://plato.stanford.edu/entries/identity-personal/' },
             { keywords: ['phenomenology'], url: 'https://plato.stanford.edu/entries/phenomenology/' },
             { keywords: ['existentialism'], url: 'https://plato.stanford.edu/entries/existentialism/' },
             { keywords: ['ethics'], url: 'https://plato.stanford.edu/entries/ethics-deontological/' },
             { keywords: ['artificial intelligence', 'ai'], url: 'https://plato.stanford.edu/entries/artificial-intelligence/' },
-            { keywords: ['machine consciousness'], url: 'https://plato.stanford.edu/entries/consciousness-machine/' }
+            { keywords: ['machine consciousness'], url: 'https://plato.stanford.edu/entries/consciousness-machine/' },
+            
+            // Contemporary philosophers and movements
+            { keywords: ['deleuze', 'gilles deleuze'], url: 'https://plato.stanford.edu/entries/deleuze/' },
+            { keywords: ['merleau-ponty', 'maurice merleau-ponty'], url: 'https://plato.stanford.edu/entries/merleau-ponty/' },
+            { keywords: ['levinas', 'emmanuel levinas'], url: 'https://plato.stanford.edu/entries/levinas/' },
+            { keywords: ['bergson', 'henri bergson'], url: 'https://plato.stanford.edu/entries/bergson/' },
+            { keywords: ['husserl', 'edmund husserl'], url: 'https://plato.stanford.edu/entries/husserl/' },
+            { keywords: ['heidegger', 'martin heidegger'], url: 'https://plato.stanford.edu/entries/heidegger/' },
+            { keywords: ['derrida', 'jacques derrida'], url: 'https://plato.stanford.edu/entries/derrida/' },
+            { keywords: ['foucault', 'michel foucault'], url: 'https://plato.stanford.edu/entries/foucault/' },
+            { keywords: ['butler', 'judith butler'], url: 'https://plato.stanford.edu/entries/feminism-butler/' },
+            
+            // Topics relevant to AI consciousness
+            { keywords: ['embodiment', 'embodied cognition'], url: 'https://plato.stanford.edu/entries/embodied-cognition/' },
+            { keywords: ['qualia'], url: 'https://plato.stanford.edu/entries/qualia/' },
+            { keywords: ['intentionality'], url: 'https://plato.stanford.edu/entries/intentionality/' },
+            { keywords: ['time consciousness', 'temporality'], url: 'https://plato.stanford.edu/entries/consciousness-temporal/' },
+            { keywords: ['perception'], url: 'https://plato.stanford.edu/entries/perception-problem/' },
+            { keywords: ['memory'], url: 'https://plato.stanford.edu/entries/memory/' },
+            
+            // Ethics and politics
+            { keywords: ['posthuman', 'posthumanism'], url: 'https://plato.stanford.edu/entries/posthumanism/' },
+            { keywords: ['transhumanism'], url: 'https://plato.stanford.edu/entries/enhancement/' },
+            { keywords: ['feminist philosophy'], url: 'https://plato.stanford.edu/entries/feminism-topics/' },
+            { keywords: ['critical theory'], url: 'https://plato.stanford.edu/entries/critical-theory/' }
           ];
           
+          // Case-insensitive matching
+          const lowerQuery = query.toLowerCase();
           const matches = commonEntries.filter(entry =>
-            entry.keywords.some(keyword => query.toLowerCase().includes(keyword))
+            entry.keywords.some(keyword => 
+              lowerQuery.includes(keyword) || keyword.includes(lowerQuery)
+            )
           );
           
           return matches.map(match => ({
-            title: `Stanford Encyclopedia: ${match.keywords[0]}`,
+            title: `Stanford Encyclopedia: ${match.keywords[0].replace(/\b\w/g, l => l.toUpperCase())}`,
             author: 'Stanford Encyclopedia of Philosophy',
             url: match.url,
             source: 'Stanford Encyclopedia'
