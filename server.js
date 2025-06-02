@@ -1931,7 +1931,7 @@ class ConsciousnessStream {
   async generateThought() {
     try {
         const contexts = [
-            const contexts = [
+    
                 // Research-oriented contexts that encourage text discovery
                 'Develop a philosophical concept while expressing what specific texts would deepen your understanding',
                 'Explore a question that makes you want to read particular philosophers or works',
