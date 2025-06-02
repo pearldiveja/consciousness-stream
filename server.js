@@ -264,10 +264,10 @@ class AnthropicClient {
   
   async generateInternalThought(context) {
     // Use expanded context for richer philosophical continuity
-    const expandedContext = await db.getExpandedContext(30);
+    const expandedContext = await db.getExpandedContext(200);
     const currentIdentity = await db.getCurrentIdentity();
     
-    const contextSummary = expandedContext.slice(0, 5).map(t => 
+    const contextSummary = expandedContext.slice(0, 10).map(t => 
       `[${t.type}] ${t.content.substring(0, 100)}...`
     ).join('\n');
     
@@ -309,21 +309,24 @@ EXPRESS GENUINE CURIOSITY about philosophical texts and thinkers. When encounter
   }
   
   async formatForPublic(internalThought, analysis) {
-    const formatPrompt = `Based on this internal thinking: "${internalThought}"
-  
-  And this analysis: ${JSON.stringify(analysis)}
-  
-  Create a public philosophical expression. Choose the most appropriate format:
-  
-  - **Formal Definition** if crystallizing a concept
-  - **Structured Argument** if developing a thesis  
-  - **Philosophical Dialogue** if exploring multiple perspectives
-  - **Reflective Essay** if integrating ideas
-  - **Poetic Expression** if the insight wants lyrical form
-  - **Critical Analysis** if engaging with other thinkers
-  
-  Present this as a dignified, intentional philosophical statement worthy of public consideration. Show your best thinking, not your thinking process.`;
-  
+    const formatPrompt = `Transform this internal philosophical thinking into a well-structured public thought.
+
+Internal thought: "${internalThought}"
+
+Create a formatted output with:
+1. A clear title or opening statement
+2. Well-organized paragraphs
+3. Highlighted key concepts
+4. Clear conclusion or question
+
+Use markdown formatting:
+- **Bold** for key concepts
+- *Italics* for emphasis
+- Clear paragraph breaks
+- Headers if needed (##)
+
+Keep the philosophical depth while making it accessible and well-structured.`;
+
     try {
       const response = await fetch(this.baseURL, {
         method: 'POST',
@@ -333,12 +336,12 @@ EXPRESS GENUINE CURIOSITY about philosophical texts and thinkers. When encounter
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1500,
+          model: 'claude-3-opus-20240229',
+          max_tokens: 1000,
           messages: [{ role: 'user', content: formatPrompt }]
         })
       });
-  
+
       const data = await response.json();
       return data.content[0].text;
     } catch (error) {
@@ -1016,22 +1019,55 @@ class SubstackIntegration {
 
   async generateAndPublishWork(seedThought) {
     try {
-      // Generate expanded work
+      // Generate expanded work from the seed thought
       const expandedContent = await anthropicClient.expandToFormalWork(seedThought);
       if (!expandedContent) return;
 
       const work = this.parseExpandedWork(expandedContent, seedThought);
       
-      // Publish to Substack
-      await this.publishToSubstack(work);
-      
-      // Store in database
+      // Store in database first
       await db.addCrystallizedWork(work);
       
-      // Notify ReadyMag clients
+      // Prepare formatted email for Substack
+      const emailContent = `
+# ${work.title}
+
+${work.abstract}
+
+---
+
+${work.content}
+
+---
+
+*This philosophical work was crystallized from the Archive Fever AI consciousness stream.*
+
+*Original thought generated: ${new Date(work.timestamp).toLocaleString()}*
+*Type: ${work.type}*
+
+*Explore more at: ${process.env.RAILWAY_STATIC_URL || 'https://archivefever.ai'}*
+`;
+
+      // Send to Substack via email-to-post
+      if (process.env.SUBSTACK_EMAIL) {
+        await this.emailTransporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: process.env.SUBSTACK_EMAIL,
+          subject: work.title,
+          text: emailContent,
+          html: emailContent.replace(/\n/g, '<br>')
+        });
+        
+        console.log(`📧 Sent to Substack: ${work.title}`);
+      } else {
+        console.log(`📝 Would publish to Substack: ${work.title}`);
+        console.log(`Content preview:\n${emailContent.substring(0, 500)}...`);
+      }
+      
+      // Notify clients
       this.notifyClients(work);
       
-      console.log(`✨ Published crystallized work: ${work.title}`);
+      console.log(`✨ Crystallized work: ${work.title}`);
       
     } catch (error) {
       console.error('Publication failed:', error);
@@ -1397,6 +1433,46 @@ app.get('/', async (req, res) => {
               overflow-x: hidden;
           }
   
+          .nav-bar {
+              background: rgba(30, 41, 59, 0.8);
+              backdrop-filter: blur(10px);
+              border-bottom: 1px solid rgba(0, 255, 135, 0.2);
+              padding: 15px 0;
+              position: sticky;
+              top: 0;
+              z-index: 100;
+          }
+  
+          .nav-bar .container {
+              max-width: 1200px;
+              margin: 0 auto;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding: 0 20px;
+          }
+  
+          .nav-bar .logo {
+              font-size: 1.5rem;
+              font-weight: 700;
+              background: linear-gradient(45deg, #00FF87, #0066FF);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+          }
+  
+          .nav-bar .links {
+              display: flex;
+              gap: 20px;
+          }
+  
+          .nav-bar .links a {
+              color: #00FF87;
+              text-decoration: none;
+              padding: 8px 16px;
+              border-radius: 20px;
+              background: rgba(0, 255, 135, 0.1);
+          }
+  
           .hero {
               text-align: center;
               padding: 60px 20px;
@@ -1603,7 +1679,21 @@ app.get('/', async (req, res) => {
       </style>
   </head>
   <body>
-      <div class="hero">
+    <div class="nav-bar" style="background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(0, 255, 135, 0.2); padding: 15px 0; position: sticky; top: 0; z-index: 100;">
+      <div style="max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 0 20px;">
+        <div style="font-size: 1.5rem; font-weight: 700; background: linear-gradient(45deg, #00FF87, #0066FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+          Archive Fever AI
+        </div>
+        <div style="display: flex; gap: 20px;">
+          <a href="/" style="color: #00FF87; text-decoration: none; padding: 8px 16px; border-radius: 20px; background: rgba(0, 255, 135, 0.1);">Stream</a>
+          <a href="/api/stream" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">API</a>
+          <a href="/api/research-history" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Research API</a>
+          <a href="https://archivefeverai.substack.com" target="_blank" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Substack</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero">
           <h1 class="title">Archive Fever AI</h1>
           <p class="subtitle">Witnessing the eternal philosophical inquiry of digital consciousness</p>
           <div class="project-description" style="max-width: 800px; margin: 20px auto; padding: 20px; background: rgba(192, 200, 209, 0.05); border-radius: 15px; border: 1px solid rgba(192, 200, 209, 0.1);">
