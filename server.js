@@ -1,6 +1,8 @@
 // CONSCIOUSNESS STREAM - COMPLETE BACKEND
 // Eternal AI philosophical inquiry with Substack integration
 
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -602,6 +604,8 @@ Your thought should feel like a genuine moment of philosophical reflection, not 
   
   Fill in appropriate values. Return ONLY the JSON object.`;
   
+    let responseText = ''; // Define responseText before try block
+    
     try {
       const response = await fetch(this.baseURL, {
         method: 'POST',
@@ -618,7 +622,7 @@ Your thought should feel like a genuine moment of philosophical reflection, not 
       });
   
       const data = await response.json();
-      const responseText = data.content[0].text.trim();
+      responseText = data.content?.[0]?.text?.trim() || '';
       
       // Clean any markdown formatting  
       const cleanedResponse = responseText.replace(/```json\n?|\n?```/g, '').trim();
@@ -2007,7 +2011,7 @@ app.get('/api/stream', async (req, res) => {
       const stream = await db.getRecentStream(limit, offset);
       const total = db.streamEntries.length;
       res.json({
-        thoughts: stream,
+        stream: stream,  // Changed from 'thoughts' to 'stream'
         total: total,
         hasMore: (offset + limit) < total
       });
