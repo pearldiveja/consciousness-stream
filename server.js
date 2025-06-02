@@ -718,6 +718,113 @@ Include a clear title and brief abstract. Format for publication.`;
     return [...commonTexts, ...modernTexts];
   }
   
+
+// Autonomous Text Discovery Engine  
+class AutonomousTextDiscovery {
+  constructor() {
+    this.activeResearches = new Map();
+  }
+
+  async processResearchHungers(hungers) {
+    if (!hungers || hungers.length === 0) return;
+
+    console.log(`🔍 Research hungers detected: ${hungers.join(', ')}`);
+    
+    for (const hunger of hungers) {
+      await this.searchForTexts(hunger);
+    }
+  }
+
+  async searchForTexts(searchQuery) {
+    console.log(`📚 Searching for: ${searchQuery}`);
+    
+    // First check if we already have this text
+    const existingTexts = await db.getDiscoveredTexts();
+    const existingMatch = existingTexts.find(text => 
+      searchQuery.toLowerCase().includes(text.title.toLowerCase()) ||
+      searchQuery.toLowerCase().includes(text.author.toLowerCase())
+    );
+    
+    if (existingMatch) {
+      console.log(`✅ Already have this text: ${existingMatch.title} by ${existingMatch.author}`);
+      // Generate a thought about returning to this text
+      const rereadingContext = `Returning to "${existingMatch.title}" by ${existingMatch.author} with renewed curiosity about: ${searchQuery}`;
+      await anthropicClient.generateThought(rereadingContext);
+      return;
+    }
+    
+    // Search all sources in parallel
+    const results = await Promise.all([
+      this.searchProjectGutenberg(searchQuery),
+      this.searchInternetArchive(searchQuery), 
+      this.searchStanfordEncyclopedia(searchQuery),
+      this.searchWikipedia(searchQuery),
+      this.searchPhilosophyDatabases(searchQuery)
+    ]);
+  
+    const allResults = results.flat().filter(result => result);
+    
+    if (allResults.length > 0) {
+      console.log(`✨ Found ${allResults.length} potential texts for: ${searchQuery}`);
+      
+      // Try to download the most relevant results
+      let successfulDownloads = 0;
+      
+      for (const result of allResults.slice(0, 3)) { // Try top 3 results
+        const success = await this.downloadAndProcessText(result, searchQuery);
+        if (success) {
+          successfulDownloads++;
+          break; // Stop after first successful download
+        }
+      }
+      
+      if (successfulDownloads === 0) {
+        console.log(`❌ No texts could be downloaded for: ${searchQuery}`);
+        await this.createEnhancedHumanResearchRequest(searchQuery);
+      }
+    } else {
+      console.log(`❌ No texts found for: ${searchQuery}`);
+      await this.createEnhancedHumanResearchRequest(searchQuery);
+    }
+  }
+  
+  async searchPhilosophyDatabases(query) {
+    // Check our expanded database of philosophical texts
+    const expandedTexts = anthropicClient.getExpandedPhilosophicalTexts();
+    
+    const matches = expandedTexts.filter(text => {
+      const searchLower = query.toLowerCase();
+      return text.title.toLowerCase().includes(searchLower) ||
+             text.author.toLowerCase().includes(searchLower) ||
+             text.keywords.some(k => searchLower.includes(k));
+    });
+    
+    return matches;
+  }
+
+  async searchProjectGutenberg(query) {
+    try {
+      // Extract author and title from query
+      const authorMatch = query.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
+      const author = authorMatch ? authorMatch[1] : '';
+      
+      console.log(`🔍 Searching Project Gutenberg for: ${query}`);
+      
+      // For now, try common philosophical works URLs directly
+      const commonTexts = anthropicClient.getCommonPhilosophicalTexts();
+      const matches = commonTexts.filter(text => 
+        text.title.toLowerCase().includes(query.toLowerCase()) ||
+        text.author.toLowerCase().includes(query.toLowerCase()) ||
+        query.toLowerCase().includes(text.keywords.join(' ').toLowerCase())
+      );
+      
+      return matches;
+    } catch (error) {
+      console.error('Project Gutenberg search failed:', error);
+      return [];
+    }
+  }
+
   async searchInternetArchive(query) {
     try {
       const searchUrl = `https://archive.org/advancedsearch.php?q=title:(${encodeURIComponent(query)}) AND mediatype:texts&fl=identifier,title,creator&rows=5&page=1&output=json`;
@@ -973,6 +1080,9 @@ Include a clear title and brief abstract. Format for publication.`;
       });
     }
   }
+}
+
+
 
 // Substack Integration
 class SubstackIntegration {
