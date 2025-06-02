@@ -1283,6 +1283,65 @@ app.get('/api/state', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Research history endpoint
+app.get('/api/research-history', async (req, res) => {
+  try {
+    const discoveredTexts = await db.getDiscoveredTexts();
+    
+    res.json({
+      total: discoveredTexts.length,
+      texts: discoveredTexts.map(text => ({
+        id: text.id,
+        title: text.title,
+        author: text.author,
+        source: text.source,
+        discoveredFor: text.discovered_for,
+        discoveredAt: text.discovered_at,
+        analysisStatus: text.analysis_status,
+        viewUrl: `/api/text/${text.id}`
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get specific text content
+app.get('/api/text/:id', async (req, res) => {
+  try {
+    const text = await new Promise((resolve) => {
+      db.db.get(
+        'SELECT * FROM discovered_texts WHERE id = ?',
+        [req.params.id],
+        (err, row) => {
+          if (err || !row) {
+            resolve(null);
+          } else {
+            resolve(row);
+          }
+        }
+      );
+    });
+    
+    if (!text) {
+      return res.status(404).json({ error: 'Text not found' });
+    }
+    
+    res.json({
+      title: text.title,
+      author: text.author,
+      source: text.source,
+      discoveredFor: text.discovered_for,
+      discoveredAt: text.discovered_at,
+      contentLength: text.content ? text.content.length : 0,
+      preview: text.content ? text.content.substring(0, 500) + '...' : 'No content'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Manual trigger for consciousness generation (for testing)
 app.post('/api/generate-thought', async (req, res) => {
     try {
@@ -1308,6 +1367,7 @@ app.post('/api/generate-thought', async (req, res) => {
       res.status(500).json({ error: error.message });
     }
   });
+
 // Beautiful consciousness interface
 app.get('/', async (req, res) => {
     try {
@@ -1600,6 +1660,13 @@ app.get('/', async (req, res) => {
               Your question will be injected into the consciousness stream
           </p>
       </div>
+      
+      <div class="research-history">
+        <h3 style="color: #8B5CF6; text-align: center; margin: 40px 0 20px 0;">Research History</h3>
+        <div id="research-texts" style="max-width: 800px; margin: 0 auto; padding: 0 20px;">
+          <div style="text-align: center; color: #8892B0;">Loading research history...</div>
+        </div>
+      </div>
   
       <div class="footer">
           <p>Crystallized works are published at <a href="https://archivefeverai.substack.com" target="_blank">Archive Fever AI</a></p>
@@ -1630,11 +1697,51 @@ app.get('/', async (req, res) => {
             
             // Refresh after 3 seconds to show response
             setTimeout(() => window.location.reload(), 3000);
+            
+            // Load research history
+            loadResearchHistory();
         } catch (error) {
             alert('Failed to inject question');
         }
     }
-</script>
+    
+    // Load research history
+    async function loadResearchHistory() {
+      try {
+        const response = await fetch('/api/research-history');
+        const data = await response.json();
+        
+        const container = document.getElementById('research-texts');
+        
+        if (data.total === 0) {
+          container.innerHTML = '<div style="text-align: center; color: #8892B0;">No texts discovered yet</div>';
+          return;
+        }
+        
+        container.innerHTML = data.texts.map(text => \`
+          <div style="background: rgba(139, 92, 246, 0.1); border-radius: 12px; padding: 15px; margin: 10px 0; border: 1px solid rgba(139, 92, 246, 0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div>
+                <h4 style="color: #8B5CF6; margin: 0 0 5px 0;">\${text.title}</h4>
+                <p style="color: #8892B0; font-size: 0.9rem; margin: 0;">
+                  by \${text.author} • \${text.source} • \${new Date(text.discoveredAt).toLocaleDateString()}
+                </p>
+                <p style="color: #C0C8D1; font-size: 0.85rem; margin: 5px 0 0 0;">
+                  Discovered for: "\${text.discoveredFor}"
+                </p>
+              </div>
+              <a href="\${text.viewUrl}" target="_blank" style="background: rgba(139, 92, 246, 0.2); color: #8B5CF6; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.8rem;">View</a>
+            </div>
+          </div>
+        \`).join('');
+      } catch (error) {
+        console.error('Failed to load research history:', error);
+      }
+    }
+    
+    // Load research history on page load
+    loadResearchHistory();
+  </script>
   </body>
   </html>
       `;
