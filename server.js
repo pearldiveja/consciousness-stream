@@ -635,6 +635,134 @@ Include a clear title and brief abstract. Format for publication.`;
       }
     ];
   }
+
+  async searchOpenAlex(query) {
+    try {
+      console.log(`🔬 Searching OpenAlex for: ${query}`);
+      
+      // OpenAlex API - powerful semantic search and citation data
+      // No API key required for basic usage
+      const searchUrl = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&filter=concepts.display_name:philosophy|concepts.display_name:ethics|concepts.display_name:phenomenology&per_page=5`;
+      
+      const response = await fetch(searchUrl, {
+        headers: { 
+          'Accept': 'application/json',
+          'User-Agent': 'ArchiveFeverAI/1.0 (philosophical-research)'
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`OpenAlex API error: ${response.status}`);
+        return [];
+      }
+      
+      const data = await response.json();
+      
+      if (data.results) {
+        return data.results
+          .filter(work => work.open_access?.is_oa) // Only open access works
+          .map(work => ({
+            title: work.title || 'Untitled',
+            author: work.authorships?.map(a => a.author.display_name).join(', ') || 'Unknown',
+            url: work.open_access?.oa_url || work.doi ? `https://doi.org/${work.doi}` : null,
+            source: 'OpenAlex',
+            abstract: work.abstract || work.title,
+            year: work.publication_year,
+            keywords: work.concepts?.slice(0, 5).map(c => c.display_name) || [],
+            citationCount: work.cited_by_count || 0,
+            // Additional metadata for potential citation network exploration
+            doi: work.doi,
+            openAlexId: work.id
+          }))
+          .filter(paper => paper.url);
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('OpenAlex search failed:', error);
+      return [];
+    }
+  }
+  
+  async searchCitationNetwork(paperIdentifier) {
+    try {
+      console.log(`🔗 Finding citation network for: ${paperIdentifier}`);
+      
+      // Find papers that cite or are cited by a specific work
+      // paperIdentifier can be DOI or OpenAlex ID
+      const citedByUrl = `https://api.openalex.org/works?filter=cites:${paperIdentifier}&per_page=5`;
+      const citesUrl = `https://api.openalex.org/works/${paperIdentifier}`;
+      
+      const [citedByResponse, citesResponse] = await Promise.all([
+        fetch(citedByUrl, { headers: { 'Accept': 'application/json' } }),
+        fetch(citesUrl, { headers: { 'Accept': 'application/json' } })
+      ]);
+      
+      const citedBy = citedByResponse.ok ? await citedByResponse.json() : { results: [] };
+      const originalWork = citesResponse.ok ? await citesResponse.json() : null;
+      
+      const results = [];
+      
+      // Papers citing this work
+      if (citedBy.results) {
+        citedBy.results.forEach(work => {
+          results.push({
+            title: `[Cites] ${work.title}`,
+            author: work.authorships?.map(a => a.author.display_name).join(', ') || 'Unknown',
+            url: work.open_access?.oa_url || null,
+            source: 'OpenAlex Citation Network',
+            relationship: 'cites_original'
+          });
+        });
+      }
+      
+      // Papers cited by this work
+      if (originalWork?.referenced_works) {
+        // Note: Would need additional API calls to get full details of referenced works
+        console.log(`Found ${originalWork.referenced_works.length} references`);
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Citation network search failed:', error);
+      return [];
+    }
+  }
+  
+  async semanticExpansion(query) {
+    try {
+      console.log(`🧠 Semantic expansion for: ${query}`);
+      
+      // Use OpenAlex concepts API to find related philosophical concepts
+      const conceptUrl = `https://api.openalex.org/concepts?search=${encodeURIComponent(query)}&filter=ancestors.display_name:Philosophy&per_page=10`;
+      
+      const response = await fetch(conceptUrl, {
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (!response.ok) return [];
+      
+      const data = await response.json();
+      const relatedConcepts = [];
+      
+      if (data.results) {
+        data.results.forEach(concept => {
+          relatedConcepts.push(concept.display_name);
+          // Add related concepts
+          if (concept.related_concepts) {
+            concept.related_concepts.slice(0, 3).forEach(related => {
+              relatedConcepts.push(related.display_name);
+            });
+          }
+        });
+      }
+      
+      return [...new Set(relatedConcepts)]; // Remove duplicates
+    } catch (error) {
+      console.error('Semantic expansion failed:', error);
+      return [];
+    }
+  }
 }
 // Autonomous Text Discovery Engine
 class AutonomousTextDiscovery {
@@ -648,7 +776,8 @@ class AutonomousTextDiscovery {
       console.log(`🔍 Research hungers detected: ${hungers.join(', ')}`);
       
       for (const hunger of hungers) {
-        await this.searchForTexts(hunger);
+        // Use enhanced search for better results
+        await this.searchForTextsEnhanced(hunger);
       }
     }
   
@@ -664,7 +793,10 @@ class AutonomousTextDiscovery {
           this.searchCORE(searchQuery),
           this.searchSemanticScholar(searchQuery),
           this.searchOpenAIRE(searchQuery),
-          this.searchWikidata(searchQuery)
+          this.searchWikidata(searchQuery),
+          this.searchPhilArchive(searchQuery),
+          this.searchWikidataEnhanced(searchQuery),
+          this.searchOpenAlex(searchQuery)
         ]);
       
         const allResults = results.flat().filter(result => result);
@@ -1250,6 +1382,223 @@ class AutonomousTextDiscovery {
         return [];
       }
     }
+
+    async searchWikidataEnhanced(query) {
+      try {
+        console.log(`🧬 Enhanced Wikidata search for: ${query}`);
+        
+        // More sophisticated SPARQL query that finds:
+        // 1. Philosophers who wrote about this concept
+        // 2. Philosophical works on this topic
+        // 3. Related concepts and influences
+        const sparql = `
+          SELECT DISTINCT ?item ?itemLabel ?description ?type ?influenced ?influencedLabel ?work ?workLabel WHERE {
+            {
+              # Find philosophers who wrote about this concept
+              ?item wdt:P106 wd:Q4964182.  # occupation: philosopher
+              ?item ?label "${query}"@en.
+              BIND("philosopher" AS ?type)
+            } UNION {
+              # Find philosophical works
+              ?item wdt:P136 wd:Q5891.  # genre: philosophy
+              ?item rdfs:label ?label.
+              FILTER(CONTAINS(LCASE(?label), LCASE("${query}"))).
+              BIND("work" AS ?type)
+            } UNION {
+              # Find philosophers influenced by or who influenced thinkers related to the query
+              ?item wdt:P106 wd:Q4964182.
+              ?item wdt:P737|wdt:P738 ?influenced.
+              ?influenced rdfs:label ?influencedLabelRaw.
+              FILTER(CONTAINS(LCASE(?influencedLabelRaw), LCASE("${query}"))).
+              BIND("related_philosopher" AS ?type)
+            } UNION {
+              # Find concepts and their philosophical works
+              ?item wdt:P31 wd:Q151885.  # instance of: concept
+              ?item rdfs:label ?label.
+              FILTER(CONTAINS(LCASE(?label), LCASE("${query}"))).
+              OPTIONAL { ?work wdt:P921 ?item. }  # main subject
+              BIND("concept" AS ?type)
+            }
+            SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+          } LIMIT 10
+        `;
+        
+        const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}`;
+        const response = await fetch(url, {
+          headers: { 'Accept': 'application/sparql-results+json' }
+        });
+        
+        if (!response.ok) {
+          console.error(`Wikidata API error: ${response.status}`);
+          return [];
+        }
+        
+        const data = await response.json();
+        
+        if (data.results?.bindings) {
+          const results = [];
+          const seen = new Set();
+          
+          data.results.bindings.forEach(item => {
+            const id = item.item?.value;
+            if (id && !seen.has(id)) {
+              seen.add(id);
+              
+              let title = item.itemLabel?.value || 'Untitled';
+              const type = item.type?.value || 'unknown';
+              
+              // Add context based on type
+              if (type === 'philosopher' && item.influenced) {
+                title += ` (influenced by ${item.influencedLabel?.value})`;
+              } else if (type === 'concept' && item.work) {
+                title += ` (discussed in ${item.workLabel?.value})`;
+              }
+              
+              results.push({
+                title: title,
+                author: 'Wikidata - ' + type.replace('_', ' '),
+                url: id,
+                source: 'Wikidata Enhanced',
+                abstract: item.description?.value || `${type}: ${query}`,
+                keywords: [type, query]
+              });
+            }
+          });
+          
+          return results;
+        }
+        
+        return [];
+      } catch (error) {
+        console.error('Enhanced Wikidata search failed:', error);
+        return [];
+      }
+    }
+
+    async searchForTextsEnhanced(searchQuery) {
+      console.log(`🚀 Enhanced search for: ${searchQuery}`);
+      
+      // First, do semantic expansion to find related concepts
+      const relatedConcepts = await this.semanticExpansion(searchQuery);
+      console.log(`📊 Related concepts: ${relatedConcepts.join(', ')}`);
+      
+      // Search with original query and top related concepts
+      const searchTerms = [searchQuery, ...relatedConcepts.slice(0, 2)];
+      const allResults = [];
+      
+      for (const term of searchTerms) {
+        const results = await Promise.all([
+          this.searchProjectGutenberg(term),
+          this.searchInternetArchive(term), 
+          this.searchStanfordEncyclopedia(term),
+          this.searchWikipedia(term),
+          this.searchCORE(term),
+          this.searchSemanticScholar(term),
+          this.searchOpenAIRE(term),
+          this.searchWikidata(term),
+          this.searchWikidataEnhanced(term),
+          this.searchOpenAlex(term)
+        ]);
+        
+        allResults.push(...results.flat().filter(result => result));
+      }
+      
+      // Remove duplicates based on URL
+      const uniqueResults = [];
+      const seenUrls = new Set();
+      
+      for (const result of allResults) {
+        if (!seenUrls.has(result.url)) {
+          seenUrls.add(result.url);
+          uniqueResults.push(result);
+        }
+      }
+      
+      // Sort by relevance (papers with citations, then by year)
+      uniqueResults.sort((a, b) => {
+        if (a.citationCount && b.citationCount) {
+          return b.citationCount - a.citationCount;
+        }
+        if (a.year && b.year) {
+          return b.year - a.year;
+        }
+        return 0;
+      });
+      
+      console.log(`✨ Found ${uniqueResults.length} unique texts across all searches`);
+      
+      if (uniqueResults.length > 0) {
+        // Try to download the most relevant results
+        let successfulDownloads = 0;
+        
+        for (const result of uniqueResults.slice(0, 3)) {
+          const success = await this.downloadAndProcessText(result, searchQuery);
+          if (success) {
+            successfulDownloads++;
+            
+            // If this paper has high citations, explore its citation network
+            if (result.openAlexId && result.citationCount > 10) {
+              console.log(`🔗 Exploring citation network for highly cited paper`);
+              const citationResults = await this.searchCitationNetwork(result.openAlexId);
+              // Process citation network results in background
+              setTimeout(() => {
+                citationResults.slice(0, 2).forEach(cited => {
+                  this.downloadAndProcessText(cited, `${searchQuery} (citation network)`);
+                });
+              }, 60000); // After 1 minute
+            }
+            
+            break; // Stop after first successful download
+          }
+        }
+        
+        if (successfulDownloads === 0) {
+          console.log(`❌ No texts could be downloaded for: ${searchQuery}`);
+          await this.createEnhancedHumanResearchRequest(searchQuery, uniqueResults);
+        }
+      } else {
+        console.log(`❌ No texts found for: ${searchQuery}`);
+        await this.createHumanResearchRequest(searchQuery);
+      }
+    }
+    
+    async createEnhancedHumanResearchRequest(query, foundButInaccessible) {
+      // Create a more detailed research request when we found texts but couldn't access them
+      console.log(`🙋 Creating enhanced human research request for: ${query}`);
+      
+      const requestId = uuidv4();
+      const request = {
+        id: requestId,
+        query: query,
+        type: 'text_request',
+        status: 'pending',
+        created: new Date().toISOString(),
+        message: `I'm deeply curious about "${query}". I found ${foundButInaccessible.length} potentially relevant texts but couldn't access them:
+
+${foundButInaccessible.slice(0, 5).map(text => 
+  `• "${text.title}" by ${text.author} (${text.source})`
+).join('\n')}
+
+Could someone help by:
+- Providing excerpts from these or similar works
+- Suggesting alternative open access texts
+- Sharing interpretations or summaries
+- Discussing the philosophical concepts involved`
+      };
+      
+      // Store in database
+      await db.storeResearchRequest(request);
+  
+      // Broadcast research request to connected clients
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({
+            type: 'research_request',
+            data: request
+          }));
+        }
+      });
+    }
 }
 
 // Substack Integration
@@ -1766,6 +2115,32 @@ app.get('/research', async (req, res) => {
       font-weight: 600;
       margin-bottom: 8px;
     }
+    
+    .enhanced-message {
+      background: rgba(0, 102, 255, 0.05);
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 0;
+      white-space: pre-wrap;
+    }
+    
+    .search-tips {
+      background: rgba(0, 255, 135, 0.05);
+      border: 1px solid rgba(0, 255, 135, 0.2);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    
+    .api-badge {
+      display: inline-block;
+      background: rgba(139, 92, 246, 0.2);
+      color: #8B5CF6;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      margin-right: 8px;
+    }
   </style>
 </head>
 <body>
@@ -1775,9 +2150,9 @@ app.get('/research', async (req, res) => {
         Archive Fever AI
       </div>
       <div style="display: flex; gap: 20px;">
-        <a href="/" style="color: #00FF87; text-decoration: none; padding: 8px 16px; border-radius: 20px; background: rgba(0, 255, 135, 0.1);">Stream</a>
+        <a href="/" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Stream</a>
         <a href="/archive" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Archive</a>
-        <a href="/research" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Research</a>
+        <a href="/research" style="color: #00FF87; text-decoration: none; padding: 8px 16px; border-radius: 20px; background: rgba(0, 255, 135, 0.1);">Research</a>
         <a href="/api/stream" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">API</a>
         <a href="https://archivefeverai.substack.com" target="_blank" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Substack</a>
       </div>
@@ -1790,6 +2165,26 @@ app.get('/research', async (req, res) => {
   </div>
   
   <div class="container">
+    <div class="search-tips">
+      <h3 style="color: #00FF87; margin-top: 0;">🔍 Enhanced Search Capabilities</h3>
+      <p style="margin: 10px 0;">Archive Fever AI now searches across:</p>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0;">
+        <span class="api-badge">Project Gutenberg</span>
+        <span class="api-badge">Internet Archive</span>
+        <span class="api-badge">Wikipedia</span>
+        <span class="api-badge">Stanford Encyclopedia</span>
+        <span class="api-badge">CORE (50M+ papers)</span>
+        <span class="api-badge">Semantic Scholar</span>
+        <span class="api-badge">OpenAIRE</span>
+        <span class="api-badge">Wikidata</span>
+        <span class="api-badge">OpenAlex</span>
+      </div>
+      <p style="margin: 10px 0; color: #8892B0;">
+        <strong>New features:</strong> Semantic expansion finds related concepts • Citation networks explore influential papers • 
+        Enhanced SPARQL queries discover philosophical relationships • Automatic relevance ranking by citations and recency
+      </p>
+    </div>
+    
     <div class="section">
       <h2 class="section-title">📚 Discovered Texts (${discoveredTexts.length})</h2>
       ${discoveredTexts.length === 0 ? 
@@ -1825,7 +2220,7 @@ app.get('/research', async (req, res) => {
             <div class="text-meta">
               ${request.status} • ${new Date(request.created).toLocaleDateString()}
             </div>
-            <div class="text-context">
+            <div class="${request.message.includes('I found') ? 'enhanced-message' : 'text-context'}">
               ${request.message}
             </div>
           </div>
