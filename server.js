@@ -380,23 +380,42 @@ class AnthropicClient {
 
   async generateThought(context) {
     try {
-      // Generate a natural, formatted thought that includes research hungers
+      // Generate one thought only
       const thought = await this.generateNaturalThought(context);
       const analysis = await this.analyzeThought(thought);
       
-      return this.processThought({
-        internalThought: thought,
-        publicThought: thought, // Use the same thought for both
-        analysis
-      });
+      // Store directly in database - no complex processing
+      const entryId = await db.addStreamEntry(
+        thought,
+        analysis.type || 'philosophical_expression',
+        { 
+          analyzed: true,
+          philosophicalThemes: analysis.philosophicalThemes || []
+        }
+      );
+  
+      const result = { 
+        thought: thought,
+        type: analysis.type || 'philosophical_expression',
+        entryId,
+        timestamp: new Date().toISOString()
+      };
+  
+      // Handle features once
+      await this.handleThoughtFeatures(analysis, result, entryId);
+      
+      return result;
     } catch (error) {
       console.error('Thought generation error:', error);
-      // Return a proper fallback without analysis to prevent duplicates
+      
+      // Simple fallback - no processing
       const fallbackThought = this.generateFallbackThought();
-      return {
-        thought: fallbackThought,
-        type: 'philosophical_expression',
-        entryId: await db.addStreamEntry(fallbackThought, 'philosophical_expression'),
+      const entryId = await db.addStreamEntry(fallbackThought, 'philosophical_expression');
+      
+      return { 
+        thought: fallbackThought, 
+        type: 'philosophical_expression', 
+        entryId,
         timestamp: new Date().toISOString()
       };
     }
@@ -1650,7 +1669,6 @@ class AutonomousTextDiscovery {
           this.searchOpenAIRE(term),
           this.searchWikidata(term),
           this.searchWikidataEnhanced(term),
-          this.searchOpenAlex(term)
         ]);
         
         allResults.push(...results.flat().filter(result => result));
