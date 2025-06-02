@@ -660,7 +660,11 @@ class AutonomousTextDiscovery {
           this.searchProjectGutenberg(searchQuery),
           this.searchInternetArchive(searchQuery), 
           this.searchStanfordEncyclopedia(searchQuery),
-          this.searchWikipedia(searchQuery)
+          this.searchWikipedia(searchQuery),
+          this.searchCORE(searchQuery),
+          this.searchSemanticScholar(searchQuery),
+          this.searchOpenAIRE(searchQuery),
+          this.searchWikidata(searchQuery)
         ]);
       
         const allResults = results.flat().filter(result => result);
@@ -1047,7 +1051,206 @@ class AutonomousTextDiscovery {
         }
       });
     }
-  }
+
+    async searchCORE(query) {
+      try {
+        console.log(`📚 Searching CORE for: ${query}`);
+        
+        // CORE API v2 - matches the working Python script
+        const apiKey = process.env.CORE_API_KEY || 'YOUR_CORE_API_KEY'; // Replace with actual key
+        const searchUrl = `https://core.ac.uk:443/api-v2/search/${encodeURIComponent(query)}?metadata=true&fulltext=false&citations=false&apiKey=${apiKey}`;
+        
+        const response = await fetch(searchUrl);
+        
+        if (!response.ok) {
+          console.error(`CORE API error: ${response.status}`);
+          return [];
+        }
+        
+        const data = await response.json();
+        
+        if (data.data) {
+          return data.data.slice(0, 5).map(paper => ({
+            title: paper.title || 'Untitled',
+            author: paper.authors?.join(', ') || 'Unknown',
+            url: paper.downloadUrl || paper.sourceFulltextUrls?.[0] || null,
+            source: 'CORE Open Access',
+            abstract: paper.description || paper.abstract,
+            year: paper.year,
+            keywords: paper.topics || []
+          })).filter(paper => paper.url);
+        }
+        
+        return [];
+      } catch (error) {
+        console.error('CORE search failed:', error);
+        return [];
+      }
+    }
+    
+    async searchSemanticScholar(query) {
+      try {
+        console.log(`🧠 Searching Semantic Scholar for: ${query}`);
+        
+        // Semantic Scholar API - matches Python script with additional fields
+        const searchUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=5&fields=title,authors,abstract,year,url,openAccessPdf,fieldsOfStudy`;
+        
+        const response = await fetch(searchUrl);
+        
+        if (!response.ok) {
+          console.error(`Semantic Scholar API error: ${response.status}`);
+          return [];
+        }
+        
+        const data = await response.json();
+        
+        if (data.data) {
+          // Filter for philosophy-related papers
+          return data.data
+            .filter(paper => 
+              paper.fieldsOfStudy?.some(field => 
+                field.toLowerCase().includes('philosophy') ||
+                field.toLowerCase().includes('ethics') ||
+                field.toLowerCase().includes('phenomenology')
+              ) || query.toLowerCase().includes('philosophy')
+            )
+            .map(paper => ({
+              title: paper.title,
+              author: paper.authors?.map(a => a.name).join(', ') || 'Unknown',
+              url: paper.openAccessPdf?.url || paper.url || null,
+              source: 'Semantic Scholar',
+              abstract: paper.abstract,
+              year: paper.year,
+              keywords: paper.fieldsOfStudy || []
+            }))
+            .filter(paper => paper.url);
+        }
+        
+        return [];
+      } catch (error) {
+        console.error('Semantic Scholar search failed:', error);
+        return [];
+      }
+    }
+    
+    async searchOpenAIRE(query) {
+      try {
+        console.log(`🔬 Searching OpenAIRE for: ${query}`);
+        
+        // OpenAIRE API - updated to match Python script
+        const searchUrl = `https://api.openaire.eu/search/publications?title=${encodeURIComponent(query)}&format=json`;
+        
+        const response = await fetch(searchUrl);
+        
+        if (!response.ok) {
+          console.error(`OpenAIRE API error: ${response.status}`);
+          return [];
+        }
+        
+        const data = await response.json();
+        
+        if (data.response?.results?.result) {
+          const results = Array.isArray(data.response.results.result) 
+            ? data.response.results.result 
+            : [data.response.results.result];
+            
+          return results.slice(0, 5).map(paper => {
+            const metadata = paper.metadata || {};
+            const title = metadata.title?.content || 'Untitled';
+            const creators = metadata.creator;
+            const authors = Array.isArray(creators) 
+              ? creators.map(c => c.content || c).join(', ')
+              : creators?.content || creators || 'Unknown';
+            
+            // Find open access URL
+            const urls = metadata.fulltext;
+            const url = Array.isArray(urls) ? urls[0] : urls;
+            
+            return {
+              title: title,
+              author: authors,
+              url: url || null,
+              source: 'OpenAIRE',
+              abstract: metadata.description?.content || metadata.description,
+              year: metadata.dateofacceptance || metadata.year,
+              keywords: metadata.subject?.map(s => s.content || s) || []
+            };
+          }).filter(paper => paper.url);
+        }
+        
+        return [];
+      } catch (error) {
+        console.error('OpenAIRE search failed:', error);
+        return [];
+      }
+    }
+
+    async searchWikidata(query) {
+      try {
+        console.log(`📊 Searching Wikidata for: ${query}`);
+        
+        // Wikidata SPARQL query for philosophical concepts and texts
+        const sparql = `
+          SELECT ?item ?itemLabel ?description ?url WHERE {
+            {
+              ?item ?label "${query}"@en.
+            } UNION {
+              ?item rdfs:label ?label.
+              FILTER(CONTAINS(LCASE(?label), LCASE("${query}"))).
+            }
+            OPTIONAL { ?item wdt:P953 ?url }
+            SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+          } LIMIT 5
+        `;
+        
+        const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}`;
+        const response = await fetch(url, {
+          headers: { 'Accept': 'application/sparql-results+json' }
+        });
+        
+        if (!response.ok) {
+          console.error(`Wikidata API error: ${response.status}`);
+          return [];
+        }
+        
+        const data = await response.json();
+        
+        if (data.results?.bindings) {
+          return data.results.bindings.map(item => ({
+            title: item.itemLabel?.value || 'Untitled',
+            author: 'Wikidata',
+            url: item.url?.value || item.item?.value || null,
+            source: 'Wikidata',
+            abstract: item.description?.value,
+            keywords: []
+          })).filter(paper => paper.url);
+        }
+        
+        return [];
+      } catch (error) {
+        console.error('Wikidata search failed:', error);
+        return [];
+      }
+    }
+
+    async searchPhilArchive(query) {
+      try {
+        console.log(`📋 Searching PhilArchive for: ${query}`);
+        
+        // PhilArchive uses OAI-PMH protocol - we can search via metadata
+        // Note: This is a simplified search - full OAI-PMH implementation would be more complex
+        const searchUrl = `https://philarchive.org/oai.pl?verb=ListRecords&metadataPrefix=oai_dc&set=philosophy`;
+        
+        // For now, return empty array as full OAI-PMH implementation requires XML parsing
+        // This is a placeholder for future enhancement
+        console.log('PhilArchive search not fully implemented yet - requires OAI-PMH client');
+        return [];
+      } catch (error) {
+        console.error('PhilArchive search failed:', error);
+        return [];
+      }
+    }
+}
 
 // Substack Integration
 class SubstackIntegration {
