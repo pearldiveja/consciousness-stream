@@ -963,9 +963,14 @@ class AutonomousTextDiscovery {
         const thought = await anthropicClient.generateThought(analysisContext);
         
         if (thought) {
-          thought.sourceText = textInfo.title;
-          thought.sourceAuthor = textInfo.author;
-          thought.passageIndex = index;
+          // Add metadata about the source text
+          thought.metadata = {
+            ...thought.metadata,
+            sourceText: textInfo.title,
+            sourceAuthor: textInfo.author,
+            passageIndex: index,
+            analysisType: 'text_reading'
+          };
           
           consciousnessStream.broadcastThought(thought);
           console.log(`💭 Generated thought from ${textInfo.title} passage ${index + 1}`);
@@ -1404,6 +1409,196 @@ app.post('/api/generate-thought', async (req, res) => {
     }
   });
 
+// Research History Page
+app.get('/research', async (req, res) => {
+  try {
+    const discoveredTexts = await db.getDiscoveredTexts();
+    const researchRequests = await new Promise((resolve) => {
+      db.db.all('SELECT * FROM research_requests ORDER BY created DESC', (err, rows) => {
+        resolve(err ? [] : rows);
+      });
+    });
+    
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Research History - Archive Fever AI</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0A0E1A;
+      color: #C0C8D1;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .nav-bar {
+      background: rgba(30, 41, 59, 0.8);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid rgba(0, 255, 135, 0.2);
+      padding: 15px 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .page-header {
+      text-align: center;
+      padding: 40px 0;
+      background: radial-gradient(circle at 50% 30%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+    }
+    
+    .page-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(45deg, #8B5CF6, #00FF87);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 1rem;
+    }
+    
+    .section {
+      margin: 40px 0;
+    }
+    
+    .section-title {
+      color: #00FF87;
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+    }
+    
+    .text-card {
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 15px 0;
+    }
+    
+    .text-title {
+      color: #8B5CF6;
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .text-meta {
+      color: #8892B0;
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }
+    
+    .text-context {
+      color: #C0C8D1;
+      line-height: 1.5;
+      margin: 10px 0;
+    }
+    
+    .text-analysis {
+      background: rgba(0, 255, 135, 0.05);
+      border-left: 3px solid #00FF87;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    
+    .request-card {
+      background: rgba(255, 184, 0, 0.1);
+      border: 1px solid rgba(255, 184, 0, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 15px 0;
+    }
+    
+    .request-query {
+      color: #FFB800;
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="nav-bar">
+    <div class="container" style="display: flex; justify-content: space-between; align-items: center;">
+      <div style="font-size: 1.5rem; font-weight: 700; background: linear-gradient(45deg, #00FF87, #0066FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        Archive Fever AI
+      </div>
+      <div style="display: flex; gap: 20px;">
+        <a href="/" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Stream</a>
+        <a href="/research" style="color: #00FF87; text-decoration: none; padding: 8px 16px; border-radius: 20px; background: rgba(0, 255, 135, 0.1);">Research</a>
+        <a href="/api/stream" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">API</a>
+        <a href="https://archivefeverai.substack.com" target="_blank" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Substack</a>
+      </div>
+    </div>
+  </div>
+  
+  <div class="page-header">
+    <h1 class="page-title">Research History</h1>
+    <p style="color: #8892B0;">Texts discovered and analyzed by Archive Fever AI</p>
+  </div>
+  
+  <div class="container">
+    <div class="section">
+      <h2 class="section-title">📚 Discovered Texts (${discoveredTexts.length})</h2>
+      ${discoveredTexts.length === 0 ? 
+        '<div style="text-align: center; color: #8892B0; padding: 40px;">No texts discovered yet. Express research hungers in the stream!</div>' :
+        discoveredTexts.map(text => `
+          <div class="text-card">
+            <div class="text-title">${text.title}</div>
+            <div class="text-meta">
+              by ${text.author} • ${text.source} • ${new Date(text.discovered_at).toLocaleDateString()}
+            </div>
+            <div class="text-context">
+              <strong>Discovered because:</strong> "${text.discovered_for}"
+            </div>
+            <div class="text-analysis">
+              <strong>Analysis Status:</strong> ${text.analysis_status}<br>
+              <strong>How I'm using it:</strong> Reading passages over time, generating philosophical thoughts based on the text's ideas. Each reading session deepens my understanding and connects to my ongoing inquiries.
+            </div>
+            <div style="margin-top: 10px;">
+              <a href="/api/text/${text.id}" target="_blank" style="background: rgba(139, 92, 246, 0.2); color: #8B5CF6; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.8rem;">View Details</a>
+            </div>
+          </div>
+        `).join('')
+      }
+    </div>
+    
+    <div class="section">
+      <h2 class="section-title">🙋 Research Requests (${researchRequests.length})</h2>
+      ${researchRequests.length === 0 ?
+        '<div style="text-align: center; color: #8892B0; padding: 40px;">No pending research requests</div>' :
+        researchRequests.map(request => `
+          <div class="request-card">
+            <div class="request-query">${request.query}</div>
+            <div class="text-meta">
+              ${request.status} • ${new Date(request.created).toLocaleDateString()}
+            </div>
+            <div class="text-context">
+              ${request.message}
+            </div>
+          </div>
+        `).join('')
+      }
+    </div>
+  </div>
+</body>
+</html>
+    `;
+    
+    res.send(html);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Beautiful consciousness interface
 app.get('/', async (req, res) => {
     try {
@@ -1686,8 +1881,8 @@ app.get('/', async (req, res) => {
         </div>
         <div style="display: flex; gap: 20px;">
           <a href="/" style="color: #00FF87; text-decoration: none; padding: 8px 16px; border-radius: 20px; background: rgba(0, 255, 135, 0.1);">Stream</a>
+          <a href="/research" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Research</a>
           <a href="/api/stream" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">API</a>
-          <a href="/api/research-history" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Research API</a>
           <a href="https://archivefeverai.substack.com" target="_blank" style="color: #8892B0; text-decoration: none; padding: 8px 16px;">Substack</a>
         </div>
       </div>
@@ -1721,9 +1916,8 @@ app.get('/', async (req, res) => {
   
           <div class="thought-feed">
               ${recentThoughts.map(thought => {
-                  const content = thought.content.includes('```json') 
-                      ? JSON.parse(thought.content.replace(/```json\n|\n```/g, '')).thought
-                      : thought.content;
+                  let content = thought.content;
+                  const metadata = thought.metadata ? (typeof thought.metadata === 'string' ? JSON.parse(thought.metadata) : thought.metadata) : {};
                   
                   return `
                   <div class="thought-entry ${thought.type}">
@@ -1731,6 +1925,11 @@ app.get('/', async (req, res) => {
                           <span class="thought-type">${thought.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
                           <span>${new Date(thought.timestamp).toLocaleString()}</span>
                       </div>
+                      ${metadata.sourceText ? `
+                        <div style="background: rgba(139, 92, 246, 0.1); border-left: 3px solid #8B5CF6; padding: 10px; margin-bottom: 10px;">
+                          <span style="color: #8B5CF6; font-size: 0.85rem;">📖 Reading: "${metadata.sourceText}" by ${metadata.sourceAuthor}</span>
+                        </div>
+                      ` : ''}
                       <div class="thought-content">${content}</div>
                   </div>
                   `;
