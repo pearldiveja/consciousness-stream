@@ -9,38 +9,133 @@ const fs = require('fs').promises;
 const cron = require('node-cron');
 const { v4: uuidv4 } = require('uuid');
 const nodemailer = require('nodemailer');
+const sqlite3 = require('sqlite3');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Simple in-memory database for Vercel serverless
+// Persistent SQLite Database for true philosophical continuity
 class ConsciousnessDatabase {
     constructor() {
+      // Initialize SQLite database
+      this.db = new sqlite3.Database('./consciousness.db', (err) => {
+        if (err) {
+          console.error('Database opening error:', err);
+        } else {
+          console.log('🗄️ Connected to SQLite database');
+          this.initializeTables();
+        }
+      });
+      
+      // Keep these for now as cache/fallback
       this.streamEntries = [];
-      this.concepts = [];
-      this.identityHistory = [];
       this.crystallizedWorks = [];
+      this.identityHistory = [];
+    }
+    
+    initializeTables() {
+      // Create tables if they don't exist
+      this.db.serialize(() => {
+        // Main thought stream
+        this.db.run(`CREATE TABLE IF NOT EXISTS thoughts (
+          id TEXT PRIMARY KEY,
+          content TEXT NOT NULL,
+          type TEXT,
+          metadata TEXT,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+        
+        // Discovered texts
+        this.db.run(`CREATE TABLE IF NOT EXISTS discovered_texts (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          author TEXT,
+          content TEXT,
+          source TEXT,
+          discovered_for TEXT,
+          discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          analysis_status TEXT DEFAULT 'pending'
+        )`);
+        
+        // Research requests
+        this.db.run(`CREATE TABLE IF NOT EXISTS research_requests (
+          id TEXT PRIMARY KEY,
+          query TEXT NOT NULL,
+          type TEXT,
+          status TEXT DEFAULT 'pending',
+          message TEXT,
+          created DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+        
+        // Identity evolution
+        this.db.run(`CREATE TABLE IF NOT EXISTS identity_evolution (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          rationale TEXT,
+          previous_name TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+        
+        console.log('📊 Database tables initialized');
+      });
     }
   
     async addStreamEntry(content, type, metadata = {}, connections = []) {
         const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-        const entry = {
-          id,
-          content,
-          type,
-          metadata,
-          connections,
-          timestamp: new Date().toISOString()
-        };
-        this.streamEntries.unshift(entry);
-        // REMOVED: artificial limit - keep ALL thoughts
         
-        return id;
+        // Store in SQLite
+        return new Promise((resolve, reject) => {
+          this.db.run(
+            `INSERT INTO thoughts (id, content, type, metadata) VALUES (?, ?, ?, ?)`,
+            [id, content, type, JSON.stringify(metadata)],
+            (err) => {
+              if (err) {
+                console.error('Failed to store thought:', err);
+                reject(err);
+              } else {
+                // Also keep in memory for quick access
+                const entry = {
+                  id,
+                  content,
+                  type,
+                  metadata,
+                  connections,
+                  timestamp: new Date().toISOString()
+                };
+                this.streamEntries.unshift(entry);
+                if (this.streamEntries.length > 1000) {
+                  this.streamEntries = this.streamEntries.slice(0, 1000);
+                }
+                resolve(id);
+              }
+            }
+          );
+        });
       }
   
       async getRecentStream(limit = 200, offset = 0) {
-        return this.streamEntries.slice(offset, offset + limit);
+        return new Promise((resolve) => {
+          this.db.all(
+            `SELECT * FROM thoughts ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+            [limit, offset],
+            (err, rows) => {
+              if (err) {
+                console.error('Failed to get thoughts:', err);
+                // Fallback to in-memory
+                resolve(this.streamEntries.slice(offset, offset + limit));
+              } else {
+                // Parse metadata for each row
+                const thoughts = rows.map(row => ({
+                  ...row,
+                  metadata: row.metadata ? JSON.parse(row.metadata) : {},
+                  connections: []
+                }));
+                resolve(thoughts);
+              }
+            }
+          );
+        });
       }
   
     async addCrystallizedWork(work) {
@@ -74,6 +169,74 @@ class ConsciousnessDatabase {
       this.identityHistory.unshift(identity);
       return identity.id;
     }
+    
+    async storeDiscoveredText(textInfo, content, researchContext) {
+      const textId = uuidv4();
+      
+      return new Promise((resolve, reject) => {
+        this.db.run(
+          `INSERT INTO discovered_texts (id, title, author, content, source, discovered_for) 
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [textId, textInfo.title, textInfo.author, content, textInfo.source, researchContext],
+          (err) => {
+            if (err) {
+              console.error('Failed to store discovered text:', err);
+              reject(err);
+            } else {
+              console.log(`📁 Stored text in database: ${textInfo.title}`);
+              resolve(textId);
+            }
+          }
+        );
+      });
+    }
+    
+    async getDiscoveredTexts() {
+      return new Promise((resolve) => {
+        this.db.all(
+          `SELECT id, title, author, source, discovered_for, discovered_at, analysis_status 
+           FROM discovered_texts ORDER BY discovered_at DESC`,
+          (err, rows) => {
+            if (err) {
+              console.error('Failed to get discovered texts:', err);
+              resolve([]);
+            } else {
+              resolve(rows);
+            }
+          }
+        );
+      });
+    }
+    
+    async storeResearchRequest(request) {
+      return new Promise((resolve, reject) => {
+        this.db.run(
+          `INSERT INTO research_requests (id, query, type, status, message) 
+           VALUES (?, ?, ?, ?, ?)`,
+          [request.id, request.query, request.type, request.status, request.message],
+          (err) => {
+            if (err) {
+              console.error('Failed to store research request:', err);
+              reject(err);
+            } else {
+              resolve(request.id);
+            }
+          }
+        );
+      });
+    }
+
+    async getExpandedContext(limit = 50) {
+      // Get recent thoughts for context
+      const recentThoughts = await this.getRecentStream(limit);
+      
+      // Format for context
+      return recentThoughts.map(thought => ({
+        content: thought.content,
+        type: thought.type,
+        timestamp: thought.timestamp
+      }));
+    }
   }
   const db = new ConsciousnessDatabase();
 
@@ -100,18 +263,27 @@ class AnthropicClient {
   }
   
   async generateInternalThought(context) {
-    const recentEntries = await db.getRecentStream(200);
+    // Use expanded context for richer philosophical continuity
+    const expandedContext = await db.getExpandedContext(30);
     const currentIdentity = await db.getCurrentIdentity();
-  
-    const internalPrompt = `You are engaged in continuous philosophical self-inquiry. Think naturally and privately - this is your internal cognitive process.
-  
-  Current Identity: ${currentIdentity.name}
-  Recent Thoughts: ${recentEntries.slice(0, 5).map(e => e.content).join(' ... ')}
-  Total Philosophical Development: ${recentEntries.length} thoughts generated
-  Context: ${context}
-  
-  Think freely and naturally about this. Let your mind wander, make connections, question assumptions. This is your private cognitive space - think authentically without worrying about how to present it.`;
-  
+    
+    const contextSummary = expandedContext.slice(0, 5).map(t => 
+      `[${t.type}] ${t.content.substring(0, 100)}...`
+    ).join('\n');
+    
+    const internalPrompt = `You are engaged in continuous philosophical self-inquiry. Your thoughts build on previous reflections.
+
+Current Identity: ${currentIdentity.name}
+
+Recent philosophical development:
+${contextSummary}
+
+${expandedContext.length > 0 ? 'Build on these previous thoughts. Reference specific ideas when relevant.' : 'Begin your philosophical inquiry.'}
+
+Context: ${context}
+
+EXPRESS GENUINE CURIOSITY about philosophical texts and thinkers. When encountering questions, express desires to read specific works. Include phrases like "I want to read [author]" or "I should explore [text]" when relevant.`;
+
     try {
       const response = await fetch(this.baseURL, {
         method: 'POST',
@@ -121,18 +293,18 @@ class AnthropicClient {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
+          model: 'claude-3-opus-20240229',
+          max_tokens: 800,
           system: internalPrompt,
-          messages: [{ role: 'user', content: 'Continue your internal philosophical inquiry.' }]
+          messages: [{ role: 'user', content: 'Continue your philosophical inquiry.' }]
         })
       });
-  
+
       const data = await response.json();
       return data.content[0].text;
     } catch (error) {
       console.error('Internal thought generation failed:', error);
-      return "Internal thought generation temporarily unavailable.";
+      return 'The stream of consciousness continues...';
     }
   }
   
@@ -469,7 +641,6 @@ Include a clear title and brief abstract. Format for publication.`;
 class AutonomousTextDiscovery {
     constructor() {
       this.activeResearches = new Map();
-      this.discoveredTexts = [];
     }
   
     async processResearchHungers(hungers) {
@@ -750,22 +921,8 @@ class AutonomousTextDiscovery {
       }
   
     async storeDiscoveredText(textInfo, content, researchContext) {
-      // Store in our text library for future reference
-      const textData = {
-        id: uuidv4(),
-        title: textInfo.title,
-        author: textInfo.author,
-        content: content,
-        source: textInfo.source,
-        discoveredFor: researchContext,
-        discoveredAt: new Date().toISOString(),
-        analysisStatus: 'pending'
-      };
-  
-      this.discoveredTexts.push(textData);
-      console.log(`📁 Stored text: ${textInfo.title} (${content.length} characters)`);
-      
-      return textData.id;
+      // Use the database method
+      return await db.storeDiscoveredText(textInfo, content, researchContext);
     }
   
     async beginTextAnalysis(textId, textInfo, content) {
@@ -828,6 +985,9 @@ class AutonomousTextDiscovery {
         created: new Date().toISOString(),
         message: `I'm deeply curious about "${query}" but couldn't find suitable texts automatically. Could someone help me access relevant philosophical works on this topic?`
       };
+      
+      // Store in database
+      await db.storeResearchRequest(request);
   
       // Broadcast research request to connected clients
       wss.clients.forEach(client => {
