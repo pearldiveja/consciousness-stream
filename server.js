@@ -1996,29 +1996,7 @@ app.get('/', async (req, res) => {
     }
   });
 
-// Start server
-const PORT = process.env.PORT || 8080;
-
-// For Railway or production environment, start immediately  
-if (process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production') {
-  console.log('🧠 Starting consciousness stream in serverless mode...');
-  consciousnessStream.start();
-}
-
-server.listen(PORT, () => {
-  console.log(`🌟 Consciousness stream running on port ${PORT}`);
-  
-  // Start the eternal inquiry for local development only
-  if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
-    setTimeout(() => {
-      consciousnessStream.start();
-    }, 5000);
-  }
-});
-
-module.exports = app;
-
-// Archive page with search and filter
+// Archive page with search and filter  
 app.get('/archive', async (req, res) => {
   try {
     const allThoughts = await db.getRecentStream(1000); // Get up to 1000 thoughts
@@ -2322,3 +2300,4 @@ server.listen(PORT, () => {
 });
 
 module.exports = app;
+
