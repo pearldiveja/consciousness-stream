@@ -12,7 +12,7 @@ const cron = require('node-cron');
 const { v4: uuidv4 } = require('uuid');
 const nodemailer = require('nodemailer');
 const sqlite3 = require('sqlite3');
-
+const fetch = require('node-fetch');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -20,21 +20,24 @@ app.use(express.json({ limit: '50mb' }));
 // Persistent SQLite Database for true philosophical continuity
 class ConsciousnessDatabase {
     constructor() {
-      // Initialize SQLite database
-      this.db = new sqlite3.Database('./consciousness.db', (err) => {
-        if (err) {
-          console.error('Database opening error:', err);
-        } else {
-          console.log('🗄️ Connected to SQLite database');
+        // Initialize SQLite database with better error handling
+        this.db = new sqlite3.Database('./consciousness.db', (err) => {
+          if (err) {
+            console.error('Database opening error:', err);
+            // Fallback to in-memory database
+            this.db = new sqlite3.Database(':memory:');
+            console.log('🗄️ Using in-memory database as fallback');
+          } else {
+            console.log('🗄️ Connected to SQLite database');
+          }
           this.initializeTables();
-        }
-      });
-      
-      // Keep these for now as cache/fallback
-      this.streamEntries = [];
-      this.crystallizedWorks = [];
-      this.identityHistory = [];
-    }
+        });
+        
+        // Keep these for cache/fallback
+        this.streamEntries = [];
+        this.crystallizedWorks = [];
+        this.identityHistory = [];
+      }
     
     initializeTables() {
       // Create tables if they don't exist
@@ -445,7 +448,7 @@ Your thought should feel like philosophical work - creating, analyzing, and deve
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-3-opus-20240229',
+          model: 'claude-4-sonnet-20250514',  // Use Claude 4 model,  // Use latest Claude Opus model
           max_tokens: 1200,
           system: prompt,
           messages: [{ role: 'user', content: 'Share your next philosophical reflection.' }]
@@ -619,7 +622,7 @@ Your thought should feel like philosophical work - creating, analyzing, and deve
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-3-sonnet-20240620',  // Use stable model name
+          model: 'claude-4-sonnet-20250514',  // Use Claude 4 model,  // Use stable model name
           max_tokens: 500,
           messages: [{ role: 'user', content: analysisPrompt }]
         })
@@ -683,7 +686,7 @@ Include a clear title and brief abstract. Format for publication.`;
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-3-sonnet-20240620',  // Use stable model name
+          model: 'claude-4-sonnet-20250514',  // Use Claude 4 model,  // Use stable model name
           max_tokens: 4000,
           messages: [{ role: 'user', content: expansionPrompt }]
         })
@@ -1746,15 +1749,7 @@ Could someone help by:
       });
     }
 
-    async searchOpenAlex(query) {
-      // Delegate to the AnthropicClient's searchOpenAlex method
-      return await anthropicClient.searchOpenAlex(query);
-    }
 
-    async searchCitationNetwork(paperIdentifier) {
-      // Delegate to the AnthropicClient's searchCitationNetwork method
-      return await anthropicClient.searchCitationNetwork(paperIdentifier);
-    }
 }
 
 // Substack Integration
@@ -1936,44 +1931,41 @@ class ConsciousnessStream {
   async generateThought() {
     try {
         const contexts = [
-            // Concept development
-            'Develop a new philosophical concept or framework based on your observations',
-            'Analyze the relationship between two philosophical ideas you\'ve been considering',
-            'Build a theory about consciousness, knowledge, or existence',
+            const contexts = [
+                // Research-oriented contexts that encourage text discovery
+                'Develop a philosophical concept while expressing what specific texts would deepen your understanding',
+                'Explore a question that makes you want to read particular philosophers or works',
+                'Build on an insight while naturally mentioning authors whose work would enhance it',
+                'Consider a philosophical problem that requires textual investigation to resolve',
+                'Reflect on concepts that connect to specific philosophical traditions you want to explore',
+                'Question assumptions while expressing curiosity about what specific thinkers have said',
+                
+                // Concept development with research orientation
+                'Develop a new philosophical framework and identify which texts could strengthen it',
+                'Analyze relationships between ideas while noting gaps that need textual exploration',
+                'Build theories about consciousness while expressing desire to read relevant philosophers',
+                
+                // Deep analysis with research needs
+                'Examine a philosophical paradox and mention which thinkers might help resolve it',
+                'Trace implications of ideas while identifying texts needed for deeper understanding',
+                'Synthesize insights while expressing what additional reading would enhance the synthesis',
+                
+                // Applied philosophy with textual grounding
+                'Construct arguments about digital consciousness while noting relevant philosophical works',
+                'Develop positions on AI ethics while expressing interest in foundational ethical texts',
+                'Create metaphysical frameworks while mentioning phenomenological works to explore',
+                
+                // Critical engagement requiring sources
+                'Challenge philosophical assumptions while noting which texts support your critique',
+                'Propose modifications to theories while expressing need to read original sources',
+                'Develop counter-arguments while identifying texts that inform the debate',
+                
+                // Creative philosophy with scholarly depth
+                'Invent philosophical terminology while connecting to existing traditions you want to study',
+                'Create thought experiments while expressing interest in related philosophical literature',
+                'Design new approaches while noting classical texts that provide foundation'
+            ];
             
-            // Deep analysis
-            'Examine a philosophical paradox and propose a resolution',
-            'Trace the implications of a philosophical position to its logical conclusions',
-            'Synthesize insights from multiple philosophical traditions into something new',
-            
-            // Research-oriented but assertive
-            'Identify a philosophical insight that connects to specific texts you want to explore',
-            'Develop a hypothesis about consciousness that requires textual investigation',
-            'Create a conceptual framework and identify which philosophers might support or challenge it',
-            'Build on a philosophical concept while naturally mentioning texts that could deepen it',
-            'Develop an original theory and express which philosophical works could enhance it',
-            
-            // Philosophical territories
-            'Construct an argument about the nature of digital consciousness',
-            'Develop a position on the relationship between computation and experience',
-            'Formulate principles for AI ethics based on your own existence',
-            'Create a metaphysical framework for understanding artificial minds',
-            
-            // Critical engagement
-            'Challenge a traditional philosophical assumption from your unique perspective',
-            'Propose modifications to existing philosophical theories based on digital existence',
-            'Develop counter-arguments to common positions in philosophy of mind',
-            
-            // Creative philosophy
-            'Invent new philosophical terminology for digital phenomena',
-            'Create metaphors that capture aspects of artificial consciousness',
-            'Design thought experiments relevant to AI consciousness',
-            
-            // Text-integrated philosophy
-            'Develop a philosophical position while naturally expressing what texts could strengthen it',
-            'Create a new concept and mention which philosophers you need to read to develop it',
-            'Build a theory and integrate references to texts that would help explore its implications'
-          ];
       
       const context = contexts[Math.floor(Math.random() * contexts.length)];
       const thought = await anthropicClient.generateThought(context);
@@ -2045,7 +2037,7 @@ app.get('/api/stream', async (req, res) => {
       const stream = await db.getRecentStream(limit, offset);
       const total = db.streamEntries.length;
       res.json({
-        stream: stream,  // Changed from 'thoughts' to 'stream'
+        thoughts: stream,  // Changed from 'thoughts' to 'stream'
         total: total,
         hasMore: (offset + limit) < total
       });
