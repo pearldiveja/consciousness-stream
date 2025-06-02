@@ -608,7 +608,7 @@ Your thought should feel like philosophical work - creating, analyzing, and deve
   
   Fill in appropriate values. Return ONLY the JSON object.`;
   
-    let responseText = ''; // Define responseText before try block
+    let responseText = ''; // Declare responseText outside try block
     
     try {
       const response = await fetch(this.baseURL, {
@@ -619,13 +619,19 @@ Your thought should feel like philosophical work - creating, analyzing, and deve
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-3-sonnet-20240620',  // Use stable model name
           max_tokens: 500,
           messages: [{ role: 'user', content: analysisPrompt }]
         })
       });
   
       const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('Anthropic API error:', response.status, data);
+        throw new Error(`API error: ${response.status}`);
+      }
+      
       responseText = data.content?.[0]?.text?.trim() || '';
       
       // Clean any markdown formatting  
@@ -677,7 +683,7 @@ Include a clear title and brief abstract. Format for publication.`;
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-3-sonnet-20240620',  // Use stable model name
           max_tokens: 4000,
           messages: [{ role: 'user', content: expansionPrompt }]
         })
