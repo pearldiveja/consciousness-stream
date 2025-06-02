@@ -381,6 +381,89 @@ Include a clear title and brief abstract. Format for publication.`;
       return null;
     }
   }
+
+  async searchProjectGutenberg(query) {
+    try {
+      console.log(`🔍 Searching Project Gutenberg for: ${query}`);
+      
+      // Use Gutendex API for real search
+      const searchUrl = `https://gutendex.com/books?search=${encodeURIComponent(query)}`;
+      const response = await fetch(searchUrl);
+      
+      if (!response.ok) {
+        // Fallback to hardcoded if API fails
+        const commonTexts = this.getCommonPhilosophicalTexts();
+        return commonTexts.filter(text => 
+          text.title.toLowerCase().includes(query.toLowerCase()) ||
+          text.author.toLowerCase().includes(query.toLowerCase())
+        );
+      }
+      
+      const data = await response.json();
+      const results = data.results.slice(0, 5).map(book => ({
+        title: book.title,
+        author: book.authors[0]?.name || 'Unknown',
+        url: book.formats['text/plain; charset=utf-8'] || 
+             book.formats['text/plain'] || 
+             null,
+        source: 'Project Gutenberg',
+        keywords: []
+      })).filter(book => book.url);
+      
+      console.log(`📚 Found ${results.length} Gutenberg texts`);
+      return results;
+    } catch (error) {
+      console.error('Project Gutenberg search failed:', error);
+      return [];
+    }
+  }
+
+  getCommonPhilosophicalTexts() {
+    return [
+      {
+        title: "Beyond Good and Evil",
+        author: "Friedrich Nietzsche", 
+        url: "https://www.gutenberg.org/files/4363/4363-0.txt",
+        source: "Project Gutenberg",
+        keywords: ["nietzsche", "beyond good evil", "morality", "philosophy"]
+      },
+      {
+        title: "The Critique of Pure Reason",
+        author: "Immanuel Kant",
+        url: "https://www.gutenberg.org/files/4280/4280-0.txt", 
+        source: "Project Gutenberg",
+        keywords: ["kant", "critique", "pure reason", "epistemology"]
+      },
+      {
+        title: "Meditations on First Philosophy",
+        author: "René Descartes",
+        url: "https://www.gutenberg.org/files/59/59-0.txt",
+        source: "Project Gutenberg", 
+        keywords: ["descartes", "meditations", "cogito", "doubt"]
+      },
+      {
+        title: "The Republic",
+        author: "Plato",
+        url: "https://www.gutenberg.org/files/1497/1497-0.txt",
+        source: "Project Gutenberg",
+        keywords: ["plato", "republic", "justice", "ideal state"]
+      },
+      {
+        title: "Discourse on Method",
+        author: "René Descartes", 
+        url: "https://www.gutenberg.org/files/59/59-0.txt",
+        source: "Project Gutenberg",
+        keywords: ["descartes", "discourse", "method", "rationalism"]
+      },
+      {
+        title: "An Essay Concerning Human Understanding",
+        author: "John Locke",
+        url: "https://www.gutenberg.org/files/10615/10615-0.txt",
+        source: "Project Gutenberg", 
+        keywords: ["locke", "understanding", "empiricism", "knowledge"]
+      }
+    ];
+  }
 }
 // Autonomous Text Discovery Engine
 class AutonomousTextDiscovery {
@@ -406,7 +489,8 @@ class AutonomousTextDiscovery {
         const results = await Promise.all([
           this.searchProjectGutenberg(searchQuery),
           this.searchInternetArchive(searchQuery), 
-          this.searchStanfordEncyclopedia(searchQuery)
+          this.searchStanfordEncyclopedia(searchQuery),
+          this.searchWikipedia(searchQuery)
         ]);
       
         const allResults = results.flat().filter(result => result);
@@ -564,6 +648,33 @@ class AutonomousTextDiscovery {
       // Stanford Encyclopedia of Philosophy, etc.
       console.log(`📖 Searching philosophical texts for: ${query}`);
       return [];
+    }
+    
+    async searchWikipedia(query) {
+      try {
+        console.log(`📖 Searching Wikipedia for: ${query}`);
+        
+        // Simple Wikipedia API search
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&format=json`;
+        const response = await fetch(searchUrl);
+        
+        if (!response.ok) return [];
+        
+        const data = await response.json();
+        const titles = data[1] || [];
+        const urls = data[3] || [];
+        
+        return titles.map((title, index) => ({
+          title: title,
+          author: 'Wikipedia',
+          url: urls[index],
+          source: 'Wikipedia',
+          keywords: []
+        }));
+      } catch (error) {
+        console.error('Wikipedia search failed:', error);
+        return [];
+      }
     }
   
     async downloadAndProcessText(textInfo, originalQuery) {
